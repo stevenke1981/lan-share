@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LAN Share</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <!-- Header -->
+  <header class="header">
+    <div class="header-inner">
+      <h1 class="logo">📁 LAN Share</h1>
+      <div class="header-actions">
+        <div class="search-box">
+          <input type="text" id="searchInput" placeholder="Search files..." />
+          <span class="search-icon">🔍</span>
+        </div>
+        <button class="btn btn-primary" id="uploadBtn">⬆ Upload</button>
+        <button class="btn btn-secondary" id="newFolderBtn">📂 New Folder</button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Breadcrumb -->
+  <nav class="breadcrumb" id="breadcrumb">
+    <a href="#" data-path="">🏠 Home</a>
+  </nav>
+
+  <!-- Main content -->
+  <main class="main">
+    <!-- File list -->
+    <div class="file-container">
+      <table class="file-table" id="fileTable">
+        <thead>
+          <tr>
+            <th class="col-icon"></th>
+            <th class="col-name">Name</th>
+            <th class="col-size">Size</th>
+            <th class="col-date">Modified</th>
+            <th class="col-actions"></th>
+          </tr>
+        </thead>
+        <tbody id="fileList">
+          <tr><td colspan="5" class="loading">Loading...</td></tr>
+        </tbody>
+      </table>
+      <div class="empty-state" id="emptyState" style="display:none">
+        <div class="empty-icon">📂</div>
+        <h3>This folder is empty</h3>
+        <p>Drag & drop files here or click upload to add files.</p>
+      </div>
+    </div>
+  </main>
+
+  <!-- Upload overlay -->
+  <div class="upload-overlay" id="uploadOverlay">
+    <div class="upload-modal">
+      <div class="upload-header">
+        <h2>Upload Files</h2>
+        <button class="close-btn" id="closeUpload">&times;</button>
+      </div>
+      <div class="upload-dropzone" id="dropzone">
+        <div class="dropzone-content">
+          <span class="dropzone-icon">📤</span>
+          <p>Drag & drop files here, or click to select</p>
+          <p class="dropzone-hint">Maximum file size: 500 MB</p>
+        </div>
+        <input type="file" id="fileInput" multiple style="display:none" />
+      </div>
+      <div class="upload-progress" id="uploadProgress" style="display:none">
+        <div class="progress-bar">
+          <div class="progress-fill" id="progressFill"></div>
+        </div>
+        <p class="progress-text" id="progressText">Uploading...</p>
+      </div>
+      <div class="upload-results" id="uploadResults" style="display:none"></div>
+    </div>
+  </div>
+
+  <!-- New folder modal -->
+  <div class="modal-overlay" id="folderModal">
+    <div class="modal">
+      <div class="modal-header">
+        <h2>New Folder</h2>
+        <button class="close-btn" id="closeFolderModal">&times;</button>
+      </div>
+      <div class="modal-body">
+        <label for="folderName">Folder name:</label>
+        <input type="text" id="folderName" placeholder="Enter folder name..." autofocus />
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" id="cancelFolder">Cancel</button>
+        <button class="btn btn-primary" id="createFolder">Create</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Preview modal -->
+  <div class="modal-overlay" id="previewModal">
+    <div class="modal modal-preview">
+      <div class="modal-header">
+        <h2 id="previewTitle">Preview</h2>
+        <div class="preview-actions">
+          <button class="btn btn-secondary" id="downloadBtn">⬇ Download</button>
+          <button class="close-btn" id="closePreview">&times;</button>
+        </div>
+      </div>
+      <div class="modal-body preview-body" id="previewBody">
+        <div class="preview-loading">Loading preview...</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast notification -->
+  <div class="toast" id="toast"></div>
+
+  <script src="/app.js"></script>
+</body>
+</html>

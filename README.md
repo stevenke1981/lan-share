@@ -12,9 +12,9 @@ After running one script, your Ubuntu machine becomes a LAN file server with **t
 | Method | How users connect | Best for |
 |--------|-------------------|----------|
 | **Samba (SMB)** | Network drive mounted in File Explorer / Finder | Desktop computers |
-| **FileBrowser** | Any web browser at `http://IP:8080` | Phones, tablets, any device |
+| **Web UI** | Any web browser at `http://IP:8080` | Phones, tablets, any device |
 
-![LAN Share Diagram](docs/diagram.png)
+
 
 ## Quick start
 
@@ -107,7 +107,7 @@ lan-share/
 
 1. Creates a shared directory (default: `/mnt/lan-share/`)
 2. Installs and configures **Samba** — the industry-standard SMB protocol
-3. Installs **FileBrowser** — a lightweight Go web file manager (runs as a systemd service)
+3. Installs a **Node.js web file browser** with drag-and-drop upload (runs as a systemd service)
 4. Creates a `README.txt` in the share directory with connection instructions
 
 Both services start automatically on boot.
@@ -118,16 +118,15 @@ Both services start automatically on boot.
 
 ```bash
 # Stop and disable services
-sudo systemctl stop filebrowser smbd
-sudo systemctl disable filebrowser smbd
+sudo systemctl stop lan-share-web smbd
+sudo systemctl disable lan-share-web smbd
 
 # Remove packages
 sudo apt-get remove samba samba-common smbclient
 
-# Remove FileBrowser
-sudo rm /usr/local/bin/filebrowser
-sudo rm -rf /var/lib/filebrowser
-sudo rm /etc/systemd/system/filebrowser.service
+# Remove web server
+sudo rm /etc/systemd/system/lan-share-web.service
+sudo rm -rf /home/<your-user>/lan-share
 
 # Remove share directory (modify path if you changed it)
 sudo rm -rf /mnt/lan-share

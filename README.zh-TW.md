@@ -12,7 +12,7 @@
 | 方式 | 怎麼連 | 適合 |
 |------|--------|------|
 | **Samba (SMB)** | 檔案總管 / Finder 掛載成網路磁碟機 | 桌機、筆電 |
-| **FileBrowser** | 瀏覽器開啟 `http://IP:8080` | 手機、平板、任何裝置 |
+| **Web UI** | 瀏覽器開啟 `http://IP:8080` | 手機、平板、任何裝置 |
 
 ## 快速開始
 
@@ -105,7 +105,7 @@ lan-share/
 
 1. 建立分享目錄（預設：`/mnt/lan-share/`）
 2. 安裝並設定 **Samba** — 業界標準的 SMB 通訊協定
-3. 安裝 **FileBrowser** — 輕量的 Go 語言網頁檔案管理器（以 systemd 服務執行）
+3. 安裝 **Node.js 網頁檔案瀏覽器**，支援拖曳上傳（以 systemd 服務執行）
 4. 在分享目錄中產生 `README.txt`，內含各平台連線方式
 
 兩個服務都會在開機時自動啟動。
@@ -116,16 +116,15 @@ lan-share/
 
 ```bash
 # 停止並停用服務
-sudo systemctl stop filebrowser smbd
-sudo systemctl disable filebrowser smbd
+sudo systemctl stop lan-share-web smbd
+sudo systemctl disable lan-share-web smbd
 
 # 移除套件
 sudo apt-get remove samba samba-common smbclient
 
-# 移除 FileBrowser
-sudo rm /usr/local/bin/filebrowser
-sudo rm -rf /var/lib/filebrowser
-sudo rm /etc/systemd/system/filebrowser.service
+# 移除網頁伺服器
+sudo rm /etc/systemd/system/lan-share-web.service
+sudo rm -rf /home/<你的帳號>/lan-share
 
 # 移除分享目錄（若你改過路徑請自行調整）
 sudo rm -rf /mnt/lan-share

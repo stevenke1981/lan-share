@@ -10,3 +10,6 @@ Thumbs.db
 
 # Temp
 /tmp/
+
+# Node.js
+node_modules/

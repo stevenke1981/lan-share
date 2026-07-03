@@ -3,8 +3,8 @@
 # LAN Share — One-command setup for a home network file server
 #
 # Installs:
-#   - Samba (SMB)    → network drive mountable by Windows/Mac/Linux
-#   - FileBrowser    → web UI for any device with a browser
+#   - Samba (SMB)      → network drive mountable by Windows/Mac/Linux
+#   - Node.js Web UI   → file browser for any device with a browser
 #
 # Usage:
 #   bash setup.sh              # interactive (asks for confirmation)
@@ -13,17 +13,20 @@
 #
 # ============================================================
 set -euo pipefail
-VERSION="1.0.0"
+VERSION="1.1.0"
 
 # ============================================================
 # Default configuration (override via environment variables)
 # ============================================================
 SHARE_DIR="${SHARE_DIR:-/mnt/lan-share}"
-FB_PORT="${FB_PORT:-8080}"
+WEB_PORT="${WEB_PORT:-8080}"
 SMB_NAME="${SMB_NAME:-shared}"
-AUTH_METHOD="${AUTH_METHOD:-noauth}"   # noauth | json(default)
 
-# Colors for output
+# Paths
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+WEB_SERVER_DIR="$SCRIPT_DIR/web-server"
+
+# Colors
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; NC='\033[0m'
 
 print_help() {
@@ -36,14 +39,13 @@ Options:
 
 Environment variables:
   SHARE_DIR     Share directory path (default: /mnt/lan-share)
-  FB_PORT       FileBrowser web UI port (default: 8080)
+  WEB_PORT      Web UI port (default: 8080)
   SMB_NAME      Samba share name (default: shared)
-  AUTH_METHOD   FileBrowser auth method: noauth or json (default: noauth)
 
 Examples:
   bash setup.sh
   SHARE_DIR=/data/share bash setup.sh --yes
-  AUTH_METHOD=json FB_PORT=9090 bash setup.sh
+  WEB_PORT=9090 bash setup.sh
 HELP
     exit 0
 }
@@ -75,8 +77,13 @@ if [[ -z "$HOST_IP" ]]; then
     exit 1
 fi
 
-FB_BINARY="/usr/local/bin/filebrowser"
-FB_DB="/var/lib/filebrowser/filebrowser.db"
+# Detect Node.js
+NODE_BIN=""
+if command -v node &>/dev/null; then
+    NODE_BIN=$(command -v node)
+elif [[ -x "$HOME/.local/node/bin/node" ]]; then
+    NODE_BIN="$HOME/.local/node/bin/node"
+fi
 
 # ---- Banner ----
 echo ""
@@ -87,8 +94,7 @@ echo ""
 echo "  Share directory : $SHARE_DIR"
 echo "  SMB share name  : $SMB_NAME"
 echo "  SMB network     : \\\\\\\\$HOST_IP\\\\$SMB_NAME"
-echo "  Web UI          : http://$HOST_IP:$FB_PORT"
-echo "  Auth method     : $AUTH_METHOD"
+echo "  Web UI          : http://$HOST_IP:$WEB_PORT"
 echo ""
 
 if ! $NON_INTERACTIVE; then
@@ -97,26 +103,33 @@ fi
 echo ""
 
 # ---- 1. System dependencies ----
-echo -e "${YELLOW}[1/5]${NC} Installing system dependencies ..."
+echo -e "${YELLOW}[1/6]${NC} Installing system dependencies ..."
 sudo apt-get update -qq
 sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
     samba samba-common smbclient curl
 echo -e "  ${GREEN}✓${NC} Done"
 
-# ---- 2. Create share directory ----
-echo -e "${YELLOW}[2/5]${NC} Creating share directory structure ..."
+# ---- 2. Ensure Node.js is available ----
+echo -e "${YELLOW}[2/6]${NC} Checking Node.js ..."
+if [[ -z "$NODE_BIN" ]]; then
+    echo -e "  ${YELLOW}→${NC} Node.js not found. Installing via apt ..."
+    sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq nodejs npm
+    NODE_BIN=$(command -v node)
+fi
+echo -e "  ${GREEN}✓${NC} Node.js $($NODE_BIN --version) at $NODE_BIN"
+
+# ---- 3. Create share directory ----
+echo -e "${YELLOW}[3/6]${NC} Creating share directory structure ..."
 sudo mkdir -p "$SHARE_DIR"/{Documents,Videos,Pictures,Music,Downloads,Projects,Backup}
 sudo chmod 0777 "$SHARE_DIR"
 echo -e "  ${GREEN}✓${NC} $SHARE_DIR/"
 
-# ---- 3. Configure Samba ----
-echo -e "${YELLOW}[3/5]${NC} Configuring Samba ..."
+# ---- 4. Configure Samba ----
+echo -e "${YELLOW}[4/6]${NC} Configuring Samba ..."
 SAMBA_CONF="/etc/samba/smb.conf"
 
-# Backup original config
 sudo cp "$SAMBA_CONF" "${SAMBA_CONF}.bak.$(date +%s)" 2>/dev/null || true
 
-# Add share definition (idempotent)
 if grep -q "^\\[${SMB_NAME}\\]" "$SAMBA_CONF" 2>/dev/null; then
     echo -e "  ${YELLOW}→${NC} [${SMB_NAME}] already exists in smb.conf, skipping."
 else
@@ -136,7 +149,6 @@ EOF
     echo -e "  ${GREEN}✓${NC} [${SMB_NAME}] added to smb.conf"
 fi
 
-# Restart Samba
 sudo systemctl enable smbd 2>/dev/null || true
 if sudo systemctl restart smbd 2>/dev/null || sudo service smbd restart 2>/dev/null; then
     echo -e "  ${GREEN}✓${NC} Samba restarted"
@@ -144,55 +156,40 @@ else
     echo -e "  ${YELLOW}⚠${NC} Could not restart smbd (may need manual restart)"
 fi
 
-# ---- 4. Install & configure FileBrowser ----
-echo -e "${YELLOW}[4/5]${NC} Installing FileBrowser ..."
+# ---- 5. Install & configure Node.js web server ----
+echo -e "${YELLOW}[5/6]${NC} Setting up Node.js web server ..."
 
-# Download latest release
-echo -e "  ${YELLOW}→${NC} Downloading from GitHub ..."
-if curl -fsSL "https://github.com/filebrowser/filebrowser/releases/latest/download/linux-amd64-filebrowser.tar.gz" \
-    -o /tmp/filebrowser.tar.gz; then
-    sudo tar -C /usr/local/bin -xzf /tmp/filebrowser.tar.gz filebrowser
-    sudo chmod +x "$FB_BINARY"
-    rm -f /tmp/filebrowser.tar.gz
-    echo -e "  ${GREEN}✓${NC} FileBrowser installed at $FB_BINARY"
-else
-    echo -e "  ${RED}✗${NC} Failed to download FileBrowser. Check internet connection." >&2
-    exit 1
-fi
-
-# Initialize database
-sudo mkdir -p /var/lib/filebrowser
-sudo "$FB_BINARY" config init --database="$FB_DB" 2>/dev/null || true
-sudo "$FB_BINARY" config set \
-    --address="0.0.0.0" \
-    --port="$FB_PORT" \
-    --root="$SHARE_DIR" \
-    --auth.method="$AUTH_METHOD" \
-    --database="$FB_DB" \
-    2>/dev/null || true
+# Install npm dependencies
+echo -e "  ${YELLOW}→${NC} Installing npm packages ..."
+cd "$WEB_SERVER_DIR"
+npm install --silent 2>/dev/null
+echo -e "  ${GREEN}✓${NC} Dependencies installed"
 
 # Create systemd service
-sudo tee /etc/systemd/system/filebrowser.service > /dev/null << EOF
+SERVICE_NAME="lan-share-web"
+sudo tee /etc/systemd/system/${SERVICE_NAME}.service > /dev/null << EOF
 [Unit]
-Description=FileBrowser Web File Manager
+Description=LAN Share — Web File Browser
 After=network.target
 
 [Service]
-ExecStart=$FB_BINARY --database=$FB_DB
+ExecStart=$NODE_BIN $WEB_SERVER_DIR/server.js --dir $SHARE_DIR
+WorkingDirectory=$WEB_SERVER_DIR
 Restart=on-failure
-RestartSec=5
-User=root
+RestartSec=3
+User=$USER
+Environment=NODE_ENV=production
 
 [Install]
 WantedBy=multi-user.target
 EOF
 
 sudo systemctl daemon-reload
-sudo systemctl enable --now filebrowser.service
-echo -e "  ${GREEN}✓${NC} FileBrowser service started"
+sudo systemctl enable --now ${SERVICE_NAME}.service
+echo -e "  ${GREEN}✓${NC} Web server started (port $WEB_PORT)"
 
-# ---- 5. Create README in share ----
-echo -e "${YELLOW}[5/5]${NC} Creating README in share directory ..."
+# ---- 6. Create README in share ----
+echo -e "${YELLOW}[6/6]${NC} Creating README in share directory ..."
 sudo tee "$SHARE_DIR/README.txt" > /dev/null << README_EOF
 ============================================
  LAN Share
@@ -212,10 +209,16 @@ sudo tee "$SHARE_DIR/README.txt" > /dev/null << README_EOF
   Or mount: sudo mount -t cifs //$HOST_IP/$SMB_NAME /mnt/lan_share -o guest
 
 --- Web UI (any device with browser) ---
-  http://$HOST_IP:$FB_PORT
+  http://$HOST_IP:$WEB_PORT
 ============================================
 README_EOF
 echo -e "  ${GREEN}✓${NC} README.txt created"
+
+# ---- Firewall ----
+if command -v ufw &>/dev/null; then
+    sudo ufw allow "$WEB_PORT/tcp" 2>/dev/null || true
+    sudo ufw allow samba 2>/dev/null || true
+fi
 
 # ---- Summary ----
 echo ""
@@ -225,7 +228,7 @@ echo -e "${GREEN}============================================${NC}"
 echo ""
 echo "  📂  Share directory:  $SHARE_DIR"
 echo ""
-echo "  🌐  Web UI:           http://$HOST_IP:$FB_PORT"
+echo "  🌐  Web UI:           http://$HOST_IP:$WEB_PORT"
 echo "  📂  SMB network:      \\\\\\\\$HOST_IP\\\\$SMB_NAME"
 echo ""
 echo "  Directory layout:"

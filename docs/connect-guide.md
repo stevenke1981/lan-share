@@ -70,7 +70,7 @@ sudo apt-get install cifs-utils
 
 ---
 
-## Any device with a browser (FileBrowser)
+## Any device with a browser (Web UI)
 
 No setup required. Just open your browser and go to:
 
@@ -82,13 +82,10 @@ http://<IP>:8080
 - 📂 Browse files and folders
 - ⬆️ Upload files (drag & drop)
 - ⬇️ Download files
-- 🖼️ Preview images, videos, PDFs
-- 📝 Edit text files
-- 🗑️ Delete and rename
-
-### Default login (if AUTH_METHOD=json)
-- Username: `admin`
-- Password: `admin`
+- 🖼️ Preview images, videos, PDFs, audio, text
+- 🔍 Search files across all folders
+- 🗑️ Delete and create folders
+- 🚫 No login required (home LAN use)
 
 ---
 
@@ -127,7 +124,7 @@ http://<IP>:8080
 |---------|-----------|
 | Can't find the server | Make sure all devices are on the **same Wi-Fi / LAN** |
 | SMB connection refused | Check firewall: `sudo ufw allow samba` |
-| Web UI not loading | Check service: `sudo systemctl status filebrowser` |
+| Web UI not loading | Check service: `sudo systemctl status lan-share-web` |
 | Permission denied | Run `sudo chmod -R 0777 /mnt/lan-share` |
 | "mount error(2): No such file or directory" | Install cifs-utils: `sudo apt-get install cifs-utils` |
 | Windows requires network credentials | Enable guest access in Windows: `secpol.msc` → Network access: Let Everyone permissions apply to anonymous users |
