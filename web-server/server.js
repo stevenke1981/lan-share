@@ -438,7 +438,18 @@ app.get('/files/*', (req, res) => {
     return res.redirect('/?path=' + encodeURIComponent(relPath));
   }
 
-  res.sendFile(filePath);
+  // Force audio/video files to download instead of playing inline
+  const ext = path.extname(filePath).toLowerCase();
+  const audioExts = ['.mp3', '.wav', '.flac', '.aac', '.ogg', '.m4a', '.opus'];
+  const videoExts = ['.mp4', '.webm', '.mov', '.avi', '.mkv'];
+  const isAudio = audioExts.includes(ext);
+  const isVideo = videoExts.includes(ext);
+
+  if (isAudio || isVideo) {
+    res.download(filePath);
+  } else {
+    res.sendFile(filePath);
+  }
 });
 
 // ─── Serve frontend ───────────────────────────────────
