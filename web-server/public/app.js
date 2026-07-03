@@ -312,6 +312,46 @@ async function deleteItem(pathEnc, name) {
   }
 }
 
+// ─── Global drag & drop ───────────────────────────────
+const globalDropOverlay = document.getElementById('globalDropOverlay');
+let dragCounter = 0;
+
+document.addEventListener('dragenter', (e) => {
+  e.preventDefault();
+  // Ignore drag events from child elements of the upload modal
+  if (uploadOverlay.classList.contains('active')) return;
+  dragCounter++;
+  if (dragCounter === 1) {
+    globalDropOverlay.classList.add('active');
+  }
+});
+
+document.addEventListener('dragover', (e) => {
+  e.preventDefault();
+});
+
+document.addEventListener('dragleave', (e) => {
+  e.preventDefault();
+  if (uploadOverlay.classList.contains('active')) return;
+  dragCounter--;
+  if (dragCounter === 0) {
+    globalDropOverlay.classList.remove('active');
+  }
+});
+
+document.addEventListener('drop', (e) => {
+  e.preventDefault();
+  dragCounter = 0;
+  globalDropOverlay.classList.remove('active');
+  if (uploadOverlay.classList.contains('active')) return;
+
+  const files = e.dataTransfer.files;
+  if (files.length > 0) {
+    openUpload();
+    uploadFiles(files);
+  }
+});
+
 // ─── Upload ───────────────────────────────────────────
 uploadBtn.addEventListener('click', () => openUpload());
 closeUpload.addEventListener('click', () => closeUploadModal());

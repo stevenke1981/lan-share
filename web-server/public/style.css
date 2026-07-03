@@ -349,6 +349,29 @@ body {
 .save-status.saved { color: var(--success); }
 .save-status.error { color: var(--danger); }
 
+/* ─── Global drop overlay ──────────────────────────── */
+.global-drop-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 17, 23, 0.85);
+  z-index: 999;
+  justify-content: center;
+  align-items: center;
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+}
+.global-drop-overlay.active { display: flex; }
+.global-drop-content {
+  text-align: center;
+  padding: 60px 80px;
+  border: 3px dashed var(--primary);
+  border-radius: 16px;
+  background: rgba(91, 141, 239, 0.08);
+}
+.global-drop-icon { font-size: 4rem; display: block; margin-bottom: 16px; }
+.global-drop-content p { font-size: 1.4rem; color: var(--text); font-weight: 500; }
+
 /* ─── Toast ─────────────────────────────────────────── */
 .toast {
   position: fixed;
