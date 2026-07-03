@@ -368,6 +368,59 @@ app.get('/api/content', (req, res) => {
   }
 });
 
+// POST /api/upload-edited — save edited image (base64)
+app.post('/api/upload-edited', express.json({ limit: '50mb' }), (req, res) => {
+  try {
+    const { path: relPath, dataUrl } = req.body;
+    if (!relPath || !dataUrl) {
+      return res.status(400).json({ error: 'Path and dataUrl required' });
+    }
+
+    // Decode base64
+    const matches = dataUrl.match(/^data:image\/(\w+);base64,(.+)$/);
+    if (!matches) {
+      return res.status(400).json({ error: 'Invalid data URL' });
+    }
+
+    const ext = matches[1] === 'jpeg' ? '.jpg' : '.' + matches[1];
+    const buffer = Buffer.from(matches[2], 'base64');
+
+    // Generate new filename
+    const originalPath = path.join(SHARE_DIR, path.normalize(relPath));
+    const dir = path.dirname(originalPath);
+    const base = path.basename(originalPath, path.extname(originalPath));
+    const newName = `${base}_edited${ext}`;
+    const outputPath = path.join(dir, newName);
+
+    // Ensure directory exists
+    fs.mkdirSync(dir, { recursive: true });
+
+    // Handle overwrites
+    let finalName = newName;
+    let finalPath = outputPath;
+    let counter = 1;
+    while (fs.existsSync(finalPath)) {
+      finalName = `${base}_edited(${counter})${ext}`;
+      finalPath = path.join(dir, finalName);
+      counter++;
+    }
+
+    fs.writeFileSync(finalPath, buffer);
+
+    res.json({
+      success: true,
+      file: {
+        name: finalName,
+        path: getRelativePath(finalPath),
+        size: buffer.length,
+        size_human: formatFileSize(buffer.length),
+      },
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ─── Serve files (for download/preview) ──────────────
 app.get('/files/*', (req, res) => {
   const relPath = req.params[0] || '';

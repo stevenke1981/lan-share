@@ -372,6 +372,112 @@ body {
 .global-drop-icon { font-size: 4rem; display: block; margin-bottom: 16px; }
 .global-drop-content p { font-size: 1.4rem; color: var(--text); font-weight: 500; }
 
+/* ─── Image Editor Toolbar ──────────────────────────── */
+.img-editor-toolbar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 500;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  padding: 8px 16px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.3);
+}
+.editor-tool-group {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding-right: 8px;
+  border-right: 1px solid var(--border);
+}
+.editor-tool-group:last-of-type { border-right: none; }
+.editor-right { margin-left: auto; }
+
+.et-btn {
+  background: var(--surface2);
+  border: 1px solid transparent;
+  color: var(--text);
+  padding: 6px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.85rem;
+  transition: all 0.15s;
+  white-space: nowrap;
+}
+.et-btn:hover { background: var(--border); }
+.et-btn.active {
+  background: var(--primary);
+  color: #fff;
+  border-color: var(--primary-hover);
+}
+.et-btn-save { background: var(--primary); color: #fff; }
+.et-btn-save:hover { background: var(--primary-hover); }
+.et-btn-cancel { background: transparent; color: var(--text-dim); border: 1px solid var(--border); }
+.et-btn-cancel:hover { background: var(--surface2); color: var(--text); }
+
+.et-label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--text-dim);
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+.et-icon { font-size: 0.9rem; font-weight: 700; min-width: 16px; text-align: center; }
+.et-slider { width: 60px; accent-color: var(--primary); cursor: pointer; }
+
+input[type="color"] {
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 1px;
+  cursor: pointer;
+  background: var(--surface2);
+}
+input[type="color"]::-webkit-color-swatch-wrapper { padding: 0; }
+input[type="color"]::-webkit-color-swatch { border: none; border-radius: 3px; }
+
+.editor-zoom-info {
+  font-size: 0.85rem;
+  color: var(--text-dim);
+  min-width: 48px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ─── Image Editor Canvas ───────────────────────────── */
+.img-editor-canvas {
+  display: none;
+  position: fixed;
+  top: 52px;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 499;
+  background: #1a1a1a;
+  overflow: hidden;
+  cursor: grab;
+}
+.img-editor-canvas.active {
+  display: block;
+}
+.img-editor-canvas.dragging {
+  cursor: grabbing;
+}
+#imageCanvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform-origin: 0 0;
+  image-rendering: auto;
+}
+
 /* ─── Toast ─────────────────────────────────────────── */
 .toast {
   position: fixed;

@@ -101,7 +101,8 @@
       <div class="modal-header">
         <h2 id="previewTitle">Preview</h2>
         <div class="preview-actions">
-          <button class="btn btn-secondary" id="editBtn" style="display:none">✏️ Edit</button>
+          <button class="btn btn-secondary" id="editTextBtn" style="display:none">✏️ Edit</button>
+          <button class="btn btn-secondary" id="editImageBtn" style="display:none">🎨 Edit Image</button>
           <button class="btn btn-secondary" id="cleanC2paBtn" style="display:none">🧹 Remove C2PA</button>
           <button class="btn btn-secondary" id="downloadBtn">⬇ Download</button>
           <button class="close-btn" id="closePreview">&times;</button>
@@ -117,13 +118,51 @@
       <div class="modal-body preview-body" id="previewBody">
         <div class="preview-loading">Loading preview...</div>
       </div>
-      <!-- Save bar for editor -->
+      <!-- Save bar for text editor -->
       <div class="save-bar" id="saveBar" style="display:none">
         <button class="btn btn-primary" id="saveBtn">💾 Save</button>
         <button class="btn btn-secondary" id="cancelEditBtn">Cancel</button>
         <span class="save-status" id="saveStatus"></span>
       </div>
     </div>
+  </div>
+
+  <!-- Image editor toolbar -->
+  <div class="img-editor-toolbar" id="imgEditorToolbar" style="display:none">
+    <div class="editor-tool-group">
+      <button class="et-btn" data-tool="pan" title="Pan (hand tool)">✋</button>
+      <button class="et-btn" data-tool="line" title="Line">╱</button>
+      <button class="et-btn" data-tool="arrow" title="Arrow">→</button>
+      <button class="et-btn" data-tool="text" title="Text">T</button>
+      <button class="et-btn" data-tool="rect" title="Rectangle">▭</button>
+      <button class="et-btn" data-tool="circle" title="Circle">○</button>
+    </div>
+    <div class="editor-tool-group">
+      <input type="color" id="editorColor" value="#ff4444" title="Stroke color" />
+      <input type="color" id="editorFillColor" value="#ff444444" title="Fill color" />
+      <label class="et-label" title="Line width">
+        <span class="et-icon">—</span>
+        <input type="range" id="editorLineWidth" min="1" max="20" value="3" class="et-slider" />
+      </label>
+      <label class="et-label" id="editorFontSizeGroup" style="display:none" title="Font size">
+        <span class="et-icon">T</span>
+        <input type="range" id="editorFontSize" min="12" max="72" value="28" class="et-slider" />
+      </label>
+    </div>
+    <div class="editor-tool-group">
+      <button class="et-btn" id="editorUndo" title="Undo (Ctrl+Z)">↩ Undo</button>
+      <button class="et-btn" id="editorClear" title="Clear all">🗑 Clear</button>
+    </div>
+    <div class="editor-tool-group editor-right">
+      <button class="et-btn et-btn-save" id="editorSaveImg">💾 Save Image</button>
+      <button class="et-btn et-btn-cancel" id="editorCancel">✕ Cancel</button>
+      <span class="editor-zoom-info" id="editorZoomInfo">100%</span>
+    </div>
+  </div>
+
+  <!-- Image editor canvas container -->
+  <div class="img-editor-canvas" id="imgEditorCanvas" style="display:none">
+    <canvas id="imageCanvas"></canvas>
   </div>
 
   <!-- Global drop overlay -->
