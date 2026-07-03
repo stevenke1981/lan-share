@@ -16,6 +16,7 @@ const fs = require('fs');
 const os = require('os');
 const crypto = require('crypto');
 const { stripC2pa } = require('./strip-c2pa');
+const { categorize, normalizeFilename } = require('./categorize');
 
 // ─── Configuration ────────────────────────────────────
 const SHARE_DIR = path.resolve(process.argv.includes('--dir')
@@ -34,22 +35,21 @@ if (!fs.existsSync(SHARE_DIR)) {
 
 const app = express();
 
-// ─── Multer upload ────────────────────────────────────
+// ─── Multer upload (auto-categorize + normalize Chinese filenames) ───
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
-    // Upload to the current directory or a subdirectory
-    const uploadDir = req.body._path
-      ? path.join(SHARE_DIR, path.normalize(req.body._path))
-      : SHARE_DIR;
+    // Normalize filename for Chinese characters
+    file.normalizedName = normalizeFilename(file.originalname);
+
+    // Auto-categorize: place in correct subdirectory based on file type
+    const category = categorize(file.normalizedName);
+    const uploadDir = path.join(SHARE_DIR, category);
     fs.mkdirSync(uploadDir, { recursive: true });
     cb(null, uploadDir);
   },
   filename: (req, file, cb) => {
-    // Preserve original filename, avoid overwrites
-    let name = file.originalname;
-    const dest = req.body._path
-      ? path.join(SHARE_DIR, path.normalize(req.body._path), name)
-      : path.join(SHARE_DIR, name);
+    let name = file.normalizedName;
+    const dest = path.join(SHARE_DIR, categorize(name), name);
     if (fs.existsSync(dest)) {
       const ext = path.extname(name);
       const base = path.basename(name, ext);

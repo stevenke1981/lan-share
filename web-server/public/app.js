@@ -388,7 +388,7 @@ async function uploadFiles(files) {
   for (const file of files) {
     formData.append('files', file);
   }
-  formData.append('_path', currentPath);
+  // Auto-categorized by server, no need to send current path
 
   try {
     const xhr = new XMLHttpRequest();
