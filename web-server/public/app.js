@@ -343,15 +343,17 @@ async function deleteItem(pathEnc, name) {
 editImageBtn.addEventListener('click', openImageEditor);
 
 function openImageEditor() {
-  let img = previewBody.querySelector('img');
-  // Fallback: try to find the image URL from the preview
+  const img = previewBody.querySelector('img');
   if (!img) {
-    const fileUrl = `/files/${encodeURIComponent(currentFilePath)}`;
-    img = { src: fileUrl };
+    showToast('No image to edit', 'error');
+    return;
   }
 
   isImageEditorOpen = true;
+  // Hide preview modal entirely — full-screen editor takes over
+  previewModal.style.display = 'none';
 
+  // Reuse the fixed canvas (already in DOM)
   imgEditor.image = new Image();
   imgEditor.image.onload = () => {
     imgEditor.imgWidth = imgEditor.image.naturalWidth;
@@ -361,11 +363,11 @@ function openImageEditor() {
     imgEditor.offsetX = 0;
     imgEditor.offsetY = 0;
 
-    // Show editor toolbar and canvas on top of everything
+    // Show toolbar + canvas
     imgEditorToolbar.style.display = 'flex';
     imgEditorCanvas.classList.add('active');
 
-    // Force layout then size canvas
+    // Must wait a frame for layout
     requestAnimationFrame(() => {
       resizeCanvas();
       fitToScreen();
@@ -376,6 +378,7 @@ function openImageEditor() {
     showToast('Failed to load image for editing', 'error');
     closeImageEditor();
   };
+  // Use the image src from the preview
   imgEditor.image.src = img.src;
 }
 
@@ -383,6 +386,14 @@ function closeImageEditor() {
   isImageEditorOpen = false;
   imgEditorToolbar.style.display = 'none';
   imgEditorCanvas.classList.remove('active');
+  previewModal.style.display = '';
+  reloadPreview();
+}
+
+// Reload the preview content after closing editor
+function reloadPreview() {
+  previewBody.innerHTML = '<div class="preview-loading">Loading preview...</div>';
+  previewFile(encodeURIComponent(currentFilePath), previewTitle.textContent);
 }
 
 // ─── Canvas sizing ────────────────────────────────────
