@@ -254,6 +254,8 @@ body {
 /* ─── Modal ─────────────────────────────────────────── */
 .modal-body { padding: 20px; }
 .modal-body label { display: block; margin-bottom: 8px; color: var(--text-dim); font-size: 0.9rem; }
+.modal-body label + input[type="text"],
+.modal-body label + input[type="password"] { margin-bottom: 4px; }
 .modal-body input[type="text"] {
   width: 100%;
   padding: 10px 12px;

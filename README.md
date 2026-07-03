@@ -66,10 +66,11 @@ You can customize the setup via environment variables:
 SHARE_DIR=/data/share bash setup.sh
 
 # Change web UI port (default: 8080)
-FB_PORT=9090 bash setup.sh
+WEB_PORT=9090 bash setup.sh
+# FB_PORT is also supported as an alias
 
 # Enable password authentication
-AUTH_METHOD=json bash setup.sh
+AUTH_METHOD=json AUTH_PASSWORD=your-secret bash setup.sh
 
 # Non-interactive mode
 bash setup.sh --yes
@@ -78,9 +79,10 @@ bash setup.sh --yes
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `SHARE_DIR` | `/mnt/lan-share` | Path to the shared directory |
-| `FB_PORT` | `8080` | Port for the web UI |
+| `WEB_PORT` | `8080` | Port for the web UI (`FB_PORT` alias supported) |
 | `SMB_NAME` | `shared` | Name of the Samba share |
 | `AUTH_METHOD` | `noauth` | `noauth` (open) or `json` (password login) |
+| `AUTH_PASSWORD` | _(prompted)_ | Password when `AUTH_METHOD=json` |
 
 ---
 

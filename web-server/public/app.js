@@ -1,5 +1,11 @@
 /* ─── LAN Share — Frontend App ──────────────────────── */
 
+let serverInfo = {
+  auth_required: false,
+  max_file_size_human: '500 MB',
+};
+let authToken = localStorage.getItem('ls-auth-token') || '';
+
 let currentPath = '';
 let isEditMode = false;
 let currentFilePath = '';
@@ -44,6 +50,12 @@ const fontSizeLabel = document.getElementById('fontSizeLabel');
 const fontResetBtn = document.getElementById('fontResetBtn');
 const cleanC2paBtn = document.getElementById('cleanC2paBtn');
 const toast = document.getElementById('toast');
+const uploadSizeHint = document.getElementById('uploadSizeHint');
+const loginModal = document.getElementById('loginModal');
+const loginUsername = document.getElementById('loginUsername');
+const loginPassword = document.getElementById('loginPassword');
+const loginSubmit = document.getElementById('loginSubmit');
+const loginError = document.getElementById('loginError');
 
 // ─── Image Editor DOM refs ────────────────────────────
 const imgEditorToolbar = document.getElementById('imgEditorToolbar');
@@ -89,6 +101,80 @@ let imgEditor = {
   needsRender: true,
 };
 
+// ─── API helpers ──────────────────────────────────────
+async function apiFetch(url, options = {}) {
+  const headers = { ...(options.headers || {}) };
+  if (authToken) {
+    headers.Authorization = `Bearer ${authToken}`;
+  }
+  const res = await fetch(url, { ...options, headers });
+  if (res.status === 401 && serverInfo.auth_required) {
+    authToken = '';
+    localStorage.removeItem('ls-auth-token');
+    showLoginModal('Session expired. Please log in again.');
+    throw new Error('Authentication required');
+  }
+  return res;
+}
+
+function showLoginModal(message = '') {
+  loginError.style.display = message ? 'block' : 'none';
+  loginError.textContent = message;
+  loginModal.classList.add('active');
+  setTimeout(() => loginPassword.focus(), 100);
+}
+
+async function initApp() {
+  try {
+    const res = await fetch('/api/info');
+    if (!res.ok) throw new Error('Failed to load server info');
+    serverInfo = await res.json();
+    if (uploadSizeHint) {
+      uploadSizeHint.textContent = `Maximum file size: ${serverInfo.max_file_size_human}`;
+    }
+    if (serverInfo.auth_required && !authToken) {
+      showLoginModal();
+      return;
+    }
+    loadDir('');
+  } catch (err) {
+    fileList.innerHTML = `<tr><td colspan="5" class="loading" style="color:var(--danger)">Error: ${err.message}</td></tr>`;
+  }
+}
+
+loginSubmit.addEventListener('click', async () => {
+  loginError.style.display = 'none';
+  loginSubmit.disabled = true;
+  loginSubmit.textContent = 'Logging in...';
+  try {
+    const res = await fetch('/api/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        username: loginUsername.value.trim(),
+        password: loginPassword.value,
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Login failed');
+    authToken = data.token;
+    localStorage.setItem('ls-auth-token', authToken);
+    loginModal.classList.remove('active');
+    loginPassword.value = '';
+    loadDir('');
+  } catch (err) {
+    loginError.textContent = err.message;
+    loginError.style.display = 'block';
+  } finally {
+    loginSubmit.disabled = false;
+    loginSubmit.textContent = 'Login';
+  }
+});
+
+loginPassword.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') loginSubmit.click();
+});
+
 // ─── Load directory ───────────────────────────────────
 async function loadDir(path) {
   currentPath = path || '';
@@ -96,7 +182,7 @@ async function loadDir(path) {
   emptyState.style.display = 'none';
 
   try {
-    const res = await fetch(`/api/list?path=${encodeURIComponent(path || '')}`);
+    const res = await apiFetch(`/api/list?path=${encodeURIComponent(path || '')}`);
     if (!res.ok) throw new Error(await res.text());
     const data = await res.json();
     renderFiles(data);
@@ -170,7 +256,7 @@ async function previewFile(pathEnc, name) {
   };
 
   try {
-    const res = await fetch(`/api/list?path=${encodeURIComponent(currentPath)}`);
+    const res = await apiFetch(`/api/list?path=${encodeURIComponent(currentPath)}`);
     const data = await res.json();
     const item = data.items.find(i => i.path === currentFilePath);
 
@@ -250,7 +336,7 @@ editTextBtn.addEventListener('click', enterEditMode);
 
 async function enterEditMode() {
   try {
-    const res = await fetch(`/api/content?path=${encodeURIComponent(currentFilePath)}`);
+    const res = await apiFetch(`/api/content?path=${encodeURIComponent(currentFilePath)}`);
     if (!res.ok) throw new Error('Failed to load content');
     const data = await res.json();
     const textarea = document.createElement('textarea');
@@ -283,7 +369,7 @@ saveBtn.addEventListener('click', async () => {
   saveStatus.textContent = 'Saving...';
   saveStatus.className = 'save-status';
   try {
-    const res = await fetch('/api/save', {
+    const res = await apiFetch('/api/save', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ path: currentFilePath, content }),
@@ -306,7 +392,7 @@ async function removeC2pa() {
   cleanC2paBtn.textContent = '⏳ Processing...';
   cleanC2paBtn.disabled = true;
   try {
-    const res = await fetch('/api/remove-c2pa', {
+    const res = await apiFetch('/api/remove-c2pa', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ path: currentFilePath }),
@@ -328,7 +414,7 @@ async function removeC2pa() {
 async function deleteItem(pathEnc, name) {
   if (!confirm(`Delete "${name}"?`)) return;
   try {
-    const res = await fetch('/api/delete', {
+    const res = await apiFetch('/api/delete', {
       method: 'DELETE',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ path: decodeURIComponent(pathEnc) }),
@@ -785,7 +871,7 @@ async function saveEditedImage() {
     const dataUrl = offscreen.toDataURL('image/png');
 
     // Upload to server
-    const res = await fetch('/api/upload-edited', {
+    const res = await apiFetch('/api/upload-edited', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ path: currentFilePath, dataUrl }),
@@ -875,6 +961,7 @@ async function uploadFiles(files) {
   try {
     const xhr = new XMLHttpRequest();
     xhr.open('POST', '/api/upload');
+    if (authToken) xhr.setRequestHeader('Authorization', `Bearer ${authToken}`);
     xhr.upload.onprogress = (e) => {
       if (e.lengthComputable) {
         const pct = Math.round((e.loaded / e.total) * 100);
@@ -885,7 +972,14 @@ async function uploadFiles(files) {
     const result = await new Promise((resolve, reject) => {
       xhr.onload = () => {
         if (xhr.status === 200) resolve(JSON.parse(xhr.responseText));
-        else reject(new Error(xhr.statusText));
+        else {
+          try {
+            const err = JSON.parse(xhr.responseText);
+            reject(new Error(err.error || xhr.statusText));
+          } catch {
+            reject(new Error(xhr.statusText || 'Upload failed'));
+          }
+        }
       };
       xhr.onerror = () => reject(new Error('Upload failed'));
       xhr.send(formData);
@@ -924,7 +1018,7 @@ createFolder.addEventListener('click', async () => {
   const name = folderName.value.trim();
   if (!name) { showToast('Please enter a folder name'); return; }
   try {
-    const res = await fetch('/api/mkdir', {
+    const res = await apiFetch('/api/mkdir', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ path: currentPath, name }),
@@ -957,7 +1051,7 @@ async function searchFiles(q) {
   fileList.innerHTML = '<tr><td colspan="5" class="loading">Searching...</td></tr>';
   emptyState.style.display = 'none';
   try {
-    const res = await fetch(`/api/search?q=${encodeURIComponent(q)}`);
+    const res = await apiFetch(`/api/search?q=${encodeURIComponent(q)}`);
     const data = await res.json();
     if (data.items.length === 0) {
       fileList.innerHTML = '<tr><td colspan="5" class="loading">No results found</td></tr>';
@@ -1047,4 +1141,4 @@ window.addEventListener('resize', () => {
 });
 
 // ─── Init ─────────────────────────────────────────────
-loadDir('');
+initApp();

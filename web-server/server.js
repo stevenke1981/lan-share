@@ -14,9 +14,16 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
-const crypto = require('crypto');
 const { stripC2pa } = require('./strip-c2pa');
 const { categorize, normalizeFilename } = require('./categorize');
+const { PathTraversalError, resolveSafePath } = require('./lib/path-utils');
+const {
+  createAuthMiddleware,
+  loadCredentials,
+  resolveAuthFile,
+} = require('./lib/auth');
+
+const VERSION = '1.2.0';
 
 // ─── Configuration ────────────────────────────────────
 const SHARE_DIR = path.resolve(process.argv.includes('--dir')
@@ -24,8 +31,10 @@ const SHARE_DIR = path.resolve(process.argv.includes('--dir')
   : process.env.SHARE_DIR || '/mnt/lan-share');
 const PORT = parseInt(process.argv.includes('--port')
   ? process.argv[process.argv.indexOf('--port') + 1]
-  : process.env.FB_PORT || '8080', 10);
+  : process.env.FB_PORT || process.env.WEB_PORT || '8080', 10);
 const MAX_FILE_SIZE = parseInt(process.env.MAX_FILE_SIZE || (500 * 1024 * 1024).toString(), 10);
+const AUTH_METHOD = (process.env.AUTH_METHOD || 'noauth').toLowerCase();
+const AUTH_FILE = resolveAuthFile(SHARE_DIR, process.env.AUTH_FILE);
 
 // ─── Ensure share directory exists ────────────────────
 if (!fs.existsSync(SHARE_DIR)) {
@@ -34,6 +43,24 @@ if (!fs.existsSync(SHARE_DIR)) {
 }
 
 const app = express();
+app.use(express.json({ limit: '50mb' }));
+
+const authCredentials = AUTH_METHOD === 'json' ? loadCredentials(AUTH_FILE) : null;
+const auth = createAuthMiddleware({
+  enabled: AUTH_METHOD === 'json',
+  credentials: authCredentials,
+});
+
+const PUBLIC_API_PATHS = new Set(['/api/health', '/api/info', '/api/login']);
+
+app.use((req, res, next) => {
+  if (!auth.required) return next();
+  if (PUBLIC_API_PATHS.has(req.path)) return next();
+  if (req.path.startsWith('/api/') || req.path.startsWith('/files/')) {
+    return auth.middleware(req, res, next);
+  }
+  return next();
+});
 
 // ─── Multer upload (auto-categorize + normalize Chinese filenames) ───
 const storage = multer.diskStorage({
@@ -69,6 +96,17 @@ const upload = multer({
 });
 
 // ─── Helpers ──────────────────────────────────────────
+function safeResolve(relPath) {
+  return resolveSafePath(SHARE_DIR, relPath);
+}
+
+function handleRouteError(res, err) {
+  if (err instanceof PathTraversalError) {
+    return res.status(err.statusCode).json({ error: err.message });
+  }
+  return res.status(500).json({ error: err.message });
+}
+
 function getRelativePath(absolutePath) {
   const rel = path.relative(SHARE_DIR, absolutePath);
   return rel || '';
@@ -154,16 +192,37 @@ function listDir(dirPath) {
 
 // ─── API Routes ───────────────────────────────────────
 
+app.get('/api/health', (_req, res) => {
+  res.json({
+    status: 'ok',
+    uptime: process.uptime(),
+    share_dir: SHARE_DIR,
+    version: VERSION,
+  });
+});
+
+app.get('/api/info', (_req, res) => {
+  res.json({
+    name: 'LAN Share',
+    version: VERSION,
+    share_dir: SHARE_DIR,
+    max_file_size: MAX_FILE_SIZE,
+    max_file_size_human: formatFileSize(MAX_FILE_SIZE),
+    auth_required: auth.required,
+  });
+});
+
+if (auth.login) {
+  app.post('/api/login', auth.login);
+  app.post('/api/logout', auth.logout);
+}
+
 // GET /api/list?path=... — list directory contents
 app.get('/api/list', (req, res) => {
   try {
     const relPath = req.query.path || '';
-    const targetPath = path.join(SHARE_DIR, path.normalize(relPath));
+    const targetPath = safeResolve(relPath);
 
-    // Security: prevent directory traversal
-    if (!targetPath.startsWith(SHARE_DIR)) {
-      return res.status(403).json({ error: 'Access denied' });
-    }
     if (!fs.existsSync(targetPath)) {
       return res.status(404).json({ error: 'Path not found' });
     }
@@ -180,38 +239,43 @@ app.get('/api/list', (req, res) => {
       items,
     });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    handleRouteError(res, err);
   }
 });
 
 // POST /api/upload — upload files
-app.post('/api/upload', upload.array('files', 50), (req, res) => {
-  if (!req.files || req.files.length === 0) {
-    return res.status(400).json({ error: 'No files received' });
-  }
+app.post('/api/upload', (req, res, next) => {
+  upload.array('files', 50)(req, res, (err) => {
+    if (err) return next(err);
+    if (!req.files || req.files.length === 0) {
+      return res.status(400).json({ error: 'No files received' });
+    }
 
-  const results = req.files.map(f => ({
-    name: f.filename,
-    original_name: f.originalname,
-    size: f.size,
-    size_human: formatFileSize(f.size),
-    path: getRelativePath(f.path),
-  }));
+    const results = req.files.map(f => ({
+      name: f.filename,
+      original_name: f.originalname,
+      size: f.size,
+      size_human: formatFileSize(f.size),
+      path: getRelativePath(f.path),
+    }));
 
-  res.json({ success: true, files: results });
+    res.json({ success: true, files: results });
+  });
 });
 
 // POST /api/mkdir — create directory
-app.post('/api/mkdir', express.json(), (req, res) => {
+app.post('/api/mkdir', (req, res) => {
   try {
     const relPath = req.body.path || '';
     const dirName = req.body.name;
     if (!dirName) return res.status(400).json({ error: 'Name required' });
-
-    const targetPath = path.join(SHARE_DIR, path.normalize(relPath), dirName);
-    if (!targetPath.startsWith(SHARE_DIR)) {
-      return res.status(403).json({ error: 'Access denied' });
+    if (/[\\/]/.test(dirName) || dirName.includes('..')) {
+      return res.status(400).json({ error: 'Invalid folder name' });
     }
+
+    const parentPath = safeResolve(relPath);
+    const targetPath = path.join(parentPath, dirName);
+    safeResolve(path.relative(SHARE_DIR, targetPath));
     if (fs.existsSync(targetPath)) {
       return res.status(409).json({ error: 'Already exists' });
     }
@@ -219,20 +283,17 @@ app.post('/api/mkdir', express.json(), (req, res) => {
     fs.mkdirSync(targetPath, { recursive: true });
     res.json({ success: true, path: getRelativePath(targetPath) });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    handleRouteError(res, err);
   }
 });
 
 // DELETE /api/delete — delete file or directory
-app.delete('/api/delete', express.json(), (req, res) => {
+app.delete('/api/delete', (req, res) => {
   try {
     const relPath = req.body.path;
     if (!relPath) return res.status(400).json({ error: 'Path required' });
 
-    const targetPath = path.join(SHARE_DIR, path.normalize(relPath));
-    if (!targetPath.startsWith(SHARE_DIR)) {
-      return res.status(403).json({ error: 'Access denied' });
-    }
+    const targetPath = safeResolve(relPath);
     if (!fs.existsSync(targetPath)) {
       return res.status(404).json({ error: 'Not found' });
     }
@@ -240,7 +301,7 @@ app.delete('/api/delete', express.json(), (req, res) => {
     fs.rmSync(targetPath, { recursive: true, force: true });
     res.json({ success: true });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    handleRouteError(res, err);
   }
 });
 
@@ -273,12 +334,12 @@ app.get('/api/search', (req, res) => {
     walk(SHARE_DIR);
     res.json({ items: results });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    handleRouteError(res, err);
   }
 });
 
 // PUT /api/save — save file content (text editing)
-app.put('/api/save', express.json(), (req, res) => {
+app.put('/api/save', (req, res) => {
   try {
     const relPath = req.body.path;
     const content = req.body.content;
@@ -287,10 +348,7 @@ app.put('/api/save', express.json(), (req, res) => {
       return res.status(400).json({ error: 'Path and content required' });
     }
 
-    const filePath = path.join(SHARE_DIR, path.normalize(relPath));
-    if (!filePath.startsWith(SHARE_DIR)) {
-      return res.status(403).json({ error: 'Access denied' });
-    }
+    const filePath = safeResolve(relPath);
     if (!fs.existsSync(filePath)) {
       return res.status(404).json({ error: 'File not found' });
     }
@@ -298,20 +356,17 @@ app.put('/api/save', express.json(), (req, res) => {
     fs.writeFileSync(filePath, content, 'utf-8');
     res.json({ success: true });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    handleRouteError(res, err);
   }
 });
 
 // POST /api/remove-c2pa — strip C2PA/metadata from image
-app.post('/api/remove-c2pa', express.json(), (req, res) => {
+app.post('/api/remove-c2pa', (req, res) => {
   try {
     const relPath = req.body.path;
     if (!relPath) return res.status(400).json({ error: 'Path required' });
 
-    const filePath = path.join(SHARE_DIR, path.normalize(relPath));
-    if (!filePath.startsWith(SHARE_DIR)) {
-      return res.status(403).json({ error: 'Access denied' });
-    }
+    const filePath = safeResolve(relPath);
     if (!fs.existsSync(filePath)) {
       return res.status(404).json({ error: 'File not found' });
     }
@@ -343,7 +398,7 @@ app.post('/api/remove-c2pa', express.json(), (req, res) => {
       },
     });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    handleRouteError(res, err);
   }
 });
 
@@ -353,10 +408,7 @@ app.get('/api/content', (req, res) => {
     const relPath = req.query.path || '';
     if (!relPath) return res.status(400).json({ error: 'Path required' });
 
-    const filePath = path.join(SHARE_DIR, path.normalize(relPath));
-    if (!filePath.startsWith(SHARE_DIR)) {
-      return res.status(403).json({ error: 'Access denied' });
-    }
+    const filePath = safeResolve(relPath);
     if (!fs.existsSync(filePath)) {
       return res.status(404).json({ error: 'File not found' });
     }
@@ -364,12 +416,12 @@ app.get('/api/content', (req, res) => {
     const content = fs.readFileSync(filePath, 'utf-8');
     res.json({ content });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    handleRouteError(res, err);
   }
 });
 
 // POST /api/upload-edited — save edited image (base64)
-app.post('/api/upload-edited', express.json({ limit: '50mb' }), (req, res) => {
+app.post('/api/upload-edited', (req, res) => {
   try {
     const { path: relPath, dataUrl } = req.body;
     if (!relPath || !dataUrl) {
@@ -386,7 +438,7 @@ app.post('/api/upload-edited', express.json({ limit: '50mb' }), (req, res) => {
     const buffer = Buffer.from(matches[2], 'base64');
 
     // Generate new filename
-    const originalPath = path.join(SHARE_DIR, path.normalize(relPath));
+    const originalPath = safeResolve(relPath);
     const dir = path.dirname(originalPath);
     const base = path.basename(originalPath, path.extname(originalPath));
     const newName = `${base}_edited${ext}`;
@@ -417,18 +469,20 @@ app.post('/api/upload-edited', express.json({ limit: '50mb' }), (req, res) => {
       },
     });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    handleRouteError(res, err);
   }
 });
 
 // ─── Serve files (for download/preview) ──────────────
 app.get('/files/*', (req, res) => {
-  const relPath = req.params[0] || '';
-  const filePath = path.join(SHARE_DIR, path.normalize(relPath));
-
-  if (!filePath.startsWith(SHARE_DIR)) {
-    return res.status(403).send('Access denied');
+  let filePath;
+  try {
+    const relPath = req.params[0] || '';
+    filePath = safeResolve(relPath);
+  } catch (err) {
+    return res.status(err.statusCode || 403).send(err.message);
   }
+
   if (!fs.existsSync(filePath)) {
     return res.status(404).send('Not found');
   }
@@ -450,6 +504,22 @@ app.get('/files/*', (req, res) => {
   } else {
     res.sendFile(filePath);
   }
+});
+
+// ─── Error handling ───────────────────────────────────
+app.use((err, _req, res, next) => {
+  if (err instanceof multer.MulterError) {
+    if (err.code === 'LIMIT_FILE_SIZE') {
+      return res.status(413).json({
+        error: `File too large. Maximum size is ${formatFileSize(MAX_FILE_SIZE)}`,
+      });
+    }
+    return res.status(400).json({ error: err.message });
+  }
+  if (err) {
+    return res.status(500).json({ error: err.message });
+  }
+  return next();
 });
 
 // ─── Serve frontend ───────────────────────────────────
@@ -482,7 +552,11 @@ app.listen(PORT, '0.0.0.0', () => {
   }
   console.log(`║  Share:   ${SHARE_DIR}`);
   console.log('╠═══════════════════════════════════════════╣');
-  console.log('║  No login required — home LAN use only   ║');
+  if (auth.required) {
+    console.log('║  Auth:     Password login required       ║');
+  } else {
+    console.log('║  No login required — home LAN use only   ║');
+  }
   console.log('╚═══════════════════════════════════════════╝');
   console.log('');
 });

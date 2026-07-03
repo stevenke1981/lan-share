@@ -64,10 +64,11 @@ http://<IP>:8080
 SHARE_DIR=/data/share bash setup.sh
 
 # 更換 Web 埠號（預設：8080）
-FB_PORT=9090 bash setup.sh
+WEB_PORT=9090 bash setup.sh
+# FB_PORT 亦支援作為別名
 
 # 啟用密碼登入
-AUTH_METHOD=json bash setup.sh
+AUTH_METHOD=json AUTH_PASSWORD=你的密碼 bash setup.sh
 
 # 非互動模式（跳過確認）
 bash setup.sh --yes
@@ -76,9 +77,10 @@ bash setup.sh --yes
 | 變數 | 預設值 | 說明 |
 |------|--------|------|
 | `SHARE_DIR` | `/mnt/lan-share` | 分享目錄路徑 |
-| `FB_PORT` | `8080` | Web 介面連接埠 |
+| `WEB_PORT` | `8080` | Web 介面連接埠（`FB_PORT` 別名亦支援） |
 | `SMB_NAME` | `shared` | Samba 分享名稱 |
 | `AUTH_METHOD` | `noauth` | `noauth`（免登入）或 `json`（密碼登入） |
+| `AUTH_PASSWORD` | _(互動輸入)_ | `AUTH_METHOD=json` 時的密碼 |
 
 ---
 

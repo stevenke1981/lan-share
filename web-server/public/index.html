@@ -63,7 +63,7 @@
         <div class="dropzone-content">
           <span class="dropzone-icon">📤</span>
           <p>Drag & drop files here, or click to select</p>
-          <p class="dropzone-hint">Maximum file size: 500 MB</p>
+          <p class="dropzone-hint" id="uploadSizeHint">Maximum file size: loading...</p>
         </div>
         <input type="file" id="fileInput" multiple style="display:none" />
       </div>
@@ -190,6 +190,25 @@
     <div class="global-drop-content">
       <span class="global-drop-icon">📤</span>
       <p>Drop files anywhere to upload</p>
+    </div>
+  </div>
+
+  <!-- Login modal -->
+  <div class="modal-overlay" id="loginModal">
+    <div class="modal">
+      <div class="modal-header">
+        <h2>Login Required</h2>
+      </div>
+      <div class="modal-body">
+        <label for="loginUsername">Username</label>
+        <input type="text" id="loginUsername" value="admin" autocomplete="username" />
+        <label for="loginPassword" style="margin-top:12px">Password</label>
+        <input type="password" id="loginPassword" autocomplete="current-password" />
+        <p id="loginError" style="margin-top:8px;color:var(--danger);font-size:0.85rem;display:none"></p>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-primary" id="loginSubmit">Login</button>
+      </div>
     </div>
   </div>
 

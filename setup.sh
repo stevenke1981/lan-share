@@ -19,8 +19,10 @@ VERSION="1.1.0"
 # Default configuration (override via environment variables)
 # ============================================================
 SHARE_DIR="${SHARE_DIR:-/mnt/lan-share}"
-WEB_PORT="${WEB_PORT:-8080}"
+WEB_PORT="${WEB_PORT:-${FB_PORT:-8080}}"
 SMB_NAME="${SMB_NAME:-shared}"
+AUTH_METHOD="${AUTH_METHOD:-noauth}"
+AUTH_PASSWORD="${AUTH_PASSWORD:-}"
 
 # Paths
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -39,8 +41,10 @@ Options:
 
 Environment variables:
   SHARE_DIR     Share directory path (default: /mnt/lan-share)
-  WEB_PORT      Web UI port (default: 8080)
+  WEB_PORT      Web UI port (default: 8080; FB_PORT alias supported)
   SMB_NAME      Samba share name (default: shared)
+  AUTH_METHOD   noauth (default) or json (password login)
+  AUTH_PASSWORD Password for json auth (optional; prompted if empty)
 
 Examples:
   bash setup.sh
@@ -95,6 +99,7 @@ echo "  Share directory : $SHARE_DIR"
 echo "  SMB share name  : $SMB_NAME"
 echo "  SMB network     : \\\\\\\\$HOST_IP\\\\$SMB_NAME"
 echo "  Web UI          : http://$HOST_IP:$WEB_PORT"
+echo "  Auth method     : $AUTH_METHOD"
 echo ""
 
 if ! $NON_INTERACTIVE; then
@@ -165,6 +170,31 @@ cd "$WEB_SERVER_DIR"
 npm install --silent 2>/dev/null
 echo -e "  ${GREEN}✓${NC} Dependencies installed"
 
+# Optional password auth file
+if [[ "$AUTH_METHOD" == "json" ]]; then
+    AUTH_FILE="$SHARE_DIR/.lan-share-auth.json"
+    if [[ ! -f "$AUTH_FILE" ]]; then
+        if [[ -z "$AUTH_PASSWORD" ]] && ! $NON_INTERACTIVE; then
+            read -r -s -p "Enter web UI password: " AUTH_PASSWORD
+            echo ""
+        fi
+        if [[ -z "$AUTH_PASSWORD" ]]; then
+            AUTH_PASSWORD="lan-share-$(date +%s)"
+            echo -e "  ${YELLOW}→${NC} No password provided; generated: $AUTH_PASSWORD"
+        fi
+        sudo tee "$AUTH_FILE" > /dev/null << AUTH_EOF
+{
+  "username": "admin",
+  "password": "$AUTH_PASSWORD"
+}
+AUTH_EOF
+        sudo chmod 600 "$AUTH_FILE"
+        echo -e "  ${GREEN}✓${NC} Auth file created at $AUTH_FILE"
+    else
+        echo -e "  ${YELLOW}→${NC} Auth file already exists, skipping."
+    fi
+fi
+
 # Create systemd service
 SERVICE_NAME="lan-share-web"
 sudo tee /etc/systemd/system/${SERVICE_NAME}.service > /dev/null << EOF
@@ -173,12 +203,15 @@ Description=LAN Share — Web File Browser
 After=network.target
 
 [Service]
-ExecStart=$NODE_BIN $WEB_SERVER_DIR/server.js --dir $SHARE_DIR
+ExecStart=$NODE_BIN $WEB_SERVER_DIR/server.js --dir $SHARE_DIR --port $WEB_PORT
 WorkingDirectory=$WEB_SERVER_DIR
 Restart=on-failure
 RestartSec=3
 User=$USER
 Environment=NODE_ENV=production
+Environment=SHARE_DIR=$SHARE_DIR
+Environment=FB_PORT=$WEB_PORT
+Environment=AUTH_METHOD=$AUTH_METHOD
 
 [Install]
 WantedBy=multi-user.target
