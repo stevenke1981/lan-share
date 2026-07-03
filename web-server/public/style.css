@@ -372,6 +372,14 @@ body {
 .global-drop-icon { font-size: 4rem; display: block; margin-bottom: 16px; }
 .global-drop-content p { font-size: 1.4rem; color: var(--text); font-weight: 500; }
 
+/* ─── Image editor text input modal ─────────────────── */
+#textInputModal {
+  z-index: 800;
+}
+#textInputField:focus {
+  border-color: var(--primary) !important;
+}
+
 /* ─── Image Editor Toolbar ──────────────────────────── */
 .img-editor-toolbar {
   position: fixed;

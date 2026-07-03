@@ -165,6 +165,26 @@
     <canvas id="imageCanvas"></canvas>
   </div>
 
+  <!-- Image editor: text input modal -->
+  <div class="modal-overlay" id="textInputModal">
+    <div class="modal">
+      <div class="modal-header">
+        <h2>Add Text</h2>
+        <button class="close-btn" id="closeTextInput">&times;</button>
+      </div>
+      <div class="modal-body">
+        <label for="textInputField">Text content:</label>
+        <textarea id="textInputField" rows="4" placeholder="Type text to place on the image..."
+          style="width:100%;padding:10px 12px;background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius);color:var(--text);font-size:1rem;outline:none;resize:vertical;font-family:inherit;"></textarea>
+        <p style="margin-top:8px;color:var(--text-dim);font-size:0.85rem;">Tip: Ctrl+Enter to add text. Enter creates a new line.</p>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" id="cancelTextInput">Cancel</button>
+        <button class="btn btn-primary" id="confirmTextInput">Add Text</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Global drop overlay -->
   <div class="global-drop-overlay" id="globalDropOverlay">
     <div class="global-drop-content">

@@ -61,6 +61,12 @@ const editorSaveImg = document.getElementById('editorSaveImg');
 const editorCancel = document.getElementById('editorCancel');
 const editorZoomInfo = document.getElementById('editorZoomInfo');
 const globalDropOverlay = document.getElementById('globalDropOverlay');
+const textInputModal = document.getElementById('textInputModal');
+const textInputField = document.getElementById('textInputField');
+const closeTextInput = document.getElementById('closeTextInput');
+const cancelTextInput = document.getElementById('cancelTextInput');
+const confirmTextInput = document.getElementById('confirmTextInput');
+let pendingTextPos = null; // {x, y} in image coords for text placement
 
 // ─── Image Editor State ───────────────────────────────
 let imgEditor = {
@@ -533,12 +539,14 @@ function drawAction(context, action, invScale) {
     case 'text': {
       if (action.text && action.points.length > 0) {
         const p = action.points[0];
-        if (action.fillColor && action.fillColor !== 'transparent') {
-          context.fillStyle = action.fillColor;
-          context.fillText(action.text, p.x + 2, p.y + 2);
+        const fontSize = Math.max(8, action.fontSize * invScale);
+        const lineHeight = fontSize * 1.25;
+        const lines = action.text.split('\n');
+        lines.forEach((line, idx) => {
+          const y = p.y + idx * lineHeight;
           context.fillStyle = action.color;
-        }
-        context.fillText(action.text, p.x, p.y);
+          context.fillText(line, p.x, y);
+        });
       }
       break;
     }
@@ -606,21 +614,12 @@ function onMouseDown(e) {
   // Drawing tool
   const imgPos = screenToImage(e.clientX, e.clientY);
 
-  // For text tool, place text immediately
+  // For text tool, open custom modal input
   if (imgEditor.activeTool === 'text') {
-    const text = prompt('Enter text:');
-    if (text && text.trim()) {
-      imgEditor.actions.push({
-        type: 'text',
-        color: editorColor.value,
-        fillColor: editorFillColor.value,
-        lineWidth: parseInt(editorLineWidth.value),
-        fontSize: parseInt(editorFontSize.value),
-        points: [{ x: imgPos.x, y: imgPos.y }],
-        text: text.trim(),
-      });
-      renderCanvas();
-    }
+    pendingTextPos = { x: imgPos.x, y: imgPos.y };
+    textInputField.value = '';
+    textInputModal.classList.add('active');
+    setTimeout(() => textInputField.focus(), 50);
     return;
   }
 
@@ -714,6 +713,45 @@ editorClear.addEventListener('click', () => {
   if (!confirm('Clear all drawings?')) return;
   imgEditor.actions = [];
   renderCanvas();
+});
+
+// ─── Text input modal ────────────────────────────────
+function closeTextInputModal() {
+  textInputModal.classList.remove('active');
+  pendingTextPos = null;
+}
+
+function applyTextInput() {
+  const text = textInputField.value.trim();
+  if (text && pendingTextPos) {
+    imgEditor.actions.push({
+      type: 'text',
+      color: editorColor.value,
+      fillColor: editorFillColor.value,
+      lineWidth: parseInt(editorLineWidth.value),
+      fontSize: parseInt(editorFontSize.value),
+      points: [{ x: pendingTextPos.x, y: pendingTextPos.y }],
+      text: text,
+    });
+    renderCanvas();
+  }
+  closeTextInputModal();
+}
+
+confirmTextInput.addEventListener('click', applyTextInput);
+closeTextInput.addEventListener('click', closeTextInputModal);
+cancelTextInput.addEventListener('click', closeTextInputModal);
+textInputModal.addEventListener('click', (e) => {
+  if (e.target === textInputModal) closeTextInputModal();
+});
+// Ctrl+Enter to confirm; Enter for new line (multi-line support)
+textInputField.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+    e.preventDefault();
+    applyTextInput();
+  }
+  // Stop editor keyboard shortcuts from firing while typing
+  e.stopPropagation();
 });
 
 // ─── Cancel editor ────────────────────────────────────
@@ -960,6 +998,7 @@ function escHtml(str) {
 // ─── Keyboard shortcuts ──────────────────────────────
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
+    if (textInputModal.classList.contains('active')) { closeTextInputModal(); return; }
     if (isImageEditorOpen) { closeImageEditor(); return; }
     if (isEditMode) { exitEditMode(); return; }
     previewModal.classList.remove('active');
