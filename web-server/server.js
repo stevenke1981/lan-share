@@ -14,6 +14,8 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
+const crypto = require('crypto');
+const { stripC2pa } = require('./strip-c2pa');
 
 // ─── Configuration ────────────────────────────────────
 const SHARE_DIR = path.resolve(process.argv.includes('--dir')
@@ -270,6 +272,97 @@ app.get('/api/search', (req, res) => {
     }
     walk(SHARE_DIR);
     res.json({ items: results });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// PUT /api/save — save file content (text editing)
+app.put('/api/save', express.json(), (req, res) => {
+  try {
+    const relPath = req.body.path;
+    const content = req.body.content;
+
+    if (!relPath || content === undefined) {
+      return res.status(400).json({ error: 'Path and content required' });
+    }
+
+    const filePath = path.join(SHARE_DIR, path.normalize(relPath));
+    if (!filePath.startsWith(SHARE_DIR)) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+    if (!fs.existsSync(filePath)) {
+      return res.status(404).json({ error: 'File not found' });
+    }
+
+    fs.writeFileSync(filePath, content, 'utf-8');
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/remove-c2pa — strip C2PA/metadata from image
+app.post('/api/remove-c2pa', express.json(), (req, res) => {
+  try {
+    const relPath = req.body.path;
+    if (!relPath) return res.status(400).json({ error: 'Path required' });
+
+    const filePath = path.join(SHARE_DIR, path.normalize(relPath));
+    if (!filePath.startsWith(SHARE_DIR)) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+    if (!fs.existsSync(filePath)) {
+      return res.status(404).json({ error: 'File not found' });
+    }
+
+    const ext = path.extname(filePath).toLowerCase();
+    if (ext !== '.jpg' && ext !== '.jpeg' && ext !== '.png') {
+      return res.status(400).json({ error: 'Only JPEG and PNG are supported' });
+    }
+
+    // Generate output filename: original name + _clean
+    const dir = path.dirname(filePath);
+    const base = path.basename(filePath, ext);
+    const newName = `${base}_clean${ext}`;
+    const outputPath = path.join(dir, newName);
+
+    const success = stripC2pa(filePath, outputPath);
+    if (!success) {
+      return res.status(500).json({ error: 'Failed to remove metadata' });
+    }
+
+    const stat = fs.statSync(outputPath);
+    res.json({
+      success: true,
+      file: {
+        name: newName,
+        path: getRelativePath(outputPath),
+        size: stat.size,
+        size_human: formatFileSize(stat.size),
+      },
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/content?path=... — get text file content for editing
+app.get('/api/content', (req, res) => {
+  try {
+    const relPath = req.query.path || '';
+    if (!relPath) return res.status(400).json({ error: 'Path required' });
+
+    const filePath = path.join(SHARE_DIR, path.normalize(relPath));
+    if (!filePath.startsWith(SHARE_DIR)) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+    if (!fs.existsSync(filePath)) {
+      return res.status(404).json({ error: 'File not found' });
+    }
+
+    const content = fs.readFileSync(filePath, 'utf-8');
+    res.json({ content });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

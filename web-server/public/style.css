@@ -92,6 +92,7 @@ body {
 .btn-secondary:hover { background: var(--border); }
 .btn-danger { background: var(--danger); color: #fff; }
 .btn-danger:hover { opacity: 0.85; }
+.btn-sm { padding: 4px 10px; font-size: 0.8rem; }
 .close-btn {
   background: none; border: none; color: var(--text-dim); font-size: 1.5rem;
   cursor: pointer; padding: 0 4px; line-height: 1;
@@ -214,8 +215,8 @@ body {
   padding: 16px 20px;
   border-bottom: 1px solid var(--border);
 }
-.upload-header h2, .modal-header h2 { font-size: 1.1rem; font-weight: 600; }
-.preview-actions { display: flex; align-items: center; gap: 8px; }
+.upload-header h2, .modal-header h2 { font-size: 1.1rem; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding-right: 8px; }
+.preview-actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
 
 .upload-dropzone {
   padding: 40px 20px;
@@ -278,12 +279,75 @@ body {
 .preview-body pre {
   width: 100%; max-height: 65vh; overflow: auto;
   background: var(--bg); padding: 16px; border-radius: 4px;
-  font-size: 0.85rem; line-height: 1.5; white-space: pre-wrap;
+  font-size: 0.85rem; line-height: 1.6; white-space: pre-wrap;
   word-break: break-all;
+  user-select: text;
+  -webkit-user-select: text;
 }
 .preview-body iframe { width: 100%; height: 65vh; border: none; }
 .preview-loading { padding: 40px; color: var(--text-dim); }
 .preview-body .preview-fallback { padding: 40px; text-align: center; color: var(--text-dim); }
+
+/* ─── Text Editor ───────────────────────────────────── */
+.preview-body textarea.editor {
+  width: 100%;
+  min-height: 50vh;
+  max-height: 70vh;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 16px;
+  font-family: 'Cascadia Code', 'Fira Code', 'JetBrains Mono', 'Consolas', monospace;
+  font-size: 14px;
+  line-height: 1.6;
+  resize: vertical;
+  outline: none;
+  tab-size: 2;
+}
+.preview-body textarea.editor:focus { border-color: var(--primary); }
+
+/* ─── Font size control ─────────────────────────────── */
+.font-control {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 20px;
+  background: var(--surface2);
+  border-bottom: 1px solid var(--border);
+  font-size: 0.85rem;
+  color: var(--text-dim);
+  flex-wrap: wrap;
+}
+.font-control label { font-size: 0.85rem; }
+.font-control input[type="range"] {
+  width: 100px;
+  accent-color: var(--primary);
+  cursor: pointer;
+}
+.font-size-label {
+  min-width: 36px;
+  font-size: 0.85rem;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ─── Save bar ──────────────────────────────────────── */
+.save-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 20px;
+  border-top: 1px solid var(--border);
+  background: var(--surface2);
+}
+.save-status {
+  font-size: 0.85rem;
+  color: var(--text-dim);
+  margin-left: auto;
+}
+.save-status.saved { color: var(--success); }
+.save-status.error { color: var(--danger); }
 
 /* ─── Toast ─────────────────────────────────────────── */
 .toast {
@@ -317,4 +381,5 @@ body {
   .col-size { width: 70px; }
   .breadcrumb { padding: 8px 12px; font-size: 0.85rem; }
   .btn { padding: 6px 12px; font-size: 0.8rem; }
+  .modal-preview { max-width: 95vw; }
 }

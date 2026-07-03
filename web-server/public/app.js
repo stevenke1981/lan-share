@@ -2,6 +2,9 @@
 
 let currentPath = '';
 let searchQuery = '';
+let isEditMode = false;
+let currentFilePath = ''; // path of the file currently being previewed
+let currentPreviewType = ''; // 'text', 'image', etc.
 
 // ─── DOM refs ─────────────────────────────────────────
 const fileList = document.getElementById('fileList');
@@ -29,6 +32,16 @@ const previewTitle = document.getElementById('previewTitle');
 const previewBody = document.getElementById('previewBody');
 const closePreview = document.getElementById('closePreview');
 const downloadBtn = document.getElementById('downloadBtn');
+const editBtn = document.getElementById('editBtn');
+const saveBtn = document.getElementById('saveBtn');
+const cancelEditBtn = document.getElementById('cancelEditBtn');
+const saveBar = document.getElementById('saveBar');
+const saveStatus = document.getElementById('saveStatus');
+const fontControl = document.getElementById('fontControl');
+const fontSizeSlider = document.getElementById('fontSizeSlider');
+const fontSizeLabel = document.getElementById('fontSizeLabel');
+const fontResetBtn = document.getElementById('fontResetBtn');
+const cleanC2paBtn = document.getElementById('cleanC2paBtn');
 const toast = document.getElementById('toast');
 
 // ─── Load directory ───────────────────────────────────
@@ -65,8 +78,8 @@ function renderFiles(data) {
 
     let rowClass = item.is_dir ? 'directory' : '';
     let clickAction = item.is_dir
-      ? `onclick="loadDir('${item.path}')"`
-      : `onclick="previewFile('${pathEnc}', '${item.name}')"`;
+      ? `onclick="loadDir('${item.path.replace(/'/g, "\\'")}')"`
+      : `onclick="previewFile('${pathEnc}', '${escHtml(name).replace(/'/g, "\\'")}')"`;
 
     return `<tr class="${rowClass}" ${clickAction}>
       <td class="col-icon">${icon}</td>
@@ -74,7 +87,7 @@ function renderFiles(data) {
       <td class="col-size">${size}</td>
       <td class="col-date">${date}</td>
       <td class="col-actions">
-        <button class="action-btn" onclick="event.stopPropagation(); deleteItem('${pathEnc}', '${escHtml(name)}')" title="Delete">🗑️</button>
+        <button class="action-btn" onclick="event.stopPropagation(); deleteItem('${pathEnc}', '${escHtml(name).replace(/'/g, "\\'")}')" title="Delete">🗑️</button>
       </td>
     </tr>`;
   }).join('');
@@ -89,7 +102,6 @@ function renderBreadcrumb(breadcrumbs) {
   }
   breadcrumb.innerHTML = html;
 
-  // Click handlers for breadcrumb links
   breadcrumb.querySelectorAll('a[data-path]').forEach(a => {
     a.addEventListener('click', (e) => {
       e.preventDefault();
@@ -100,29 +112,37 @@ function renderBreadcrumb(breadcrumbs) {
 
 // ─── Preview file ─────────────────────────────────────
 async function previewFile(pathEnc, name) {
+  currentFilePath = decodeURIComponent(pathEnc);
   previewTitle.textContent = name;
   previewBody.innerHTML = '<div class="preview-loading">Loading preview...</div>';
   previewModal.classList.add('active');
+  isEditMode = false;
+  editBtn.style.display = 'none';
+  saveBar.style.display = 'none';
+  fontControl.style.display = 'none';
+  cleanC2paBtn.style.display = 'none';
 
   downloadBtn.onclick = () => {
-    window.open(`/files/${pathEnc}`, '_blank');
+    window.open(`/files/${encodeURIComponent(currentFilePath)}`, '_blank');
   };
 
   try {
     const res = await fetch(`/api/list?path=${encodeURIComponent(currentPath)}`);
     const data = await res.json();
-    const item = data.items.find(i => i.path === decodeURIComponent(pathEnc));
+    const item = data.items.find(i => i.path === currentFilePath);
 
     if (!item) {
       previewBody.innerHTML = '<div class="preview-fallback">File not found</div>';
       return;
     }
 
-    const fileUrl = `/files/${pathEnc}`;
+    currentPreviewType = item.preview_type || '';
+    const fileUrl = `/files/${encodeURIComponent(currentFilePath)}`;
 
-    switch (item.preview_type) {
+    switch (currentPreviewType) {
       case 'image':
         previewBody.innerHTML = `<img src="${fileUrl}" alt="${escHtml(name)}" onerror="this.parentElement.innerHTML='<div class=preview-fallback>Preview not available</div>'" />`;
+        cleanC2paBtn.style.display = 'inline-block';
         break;
       case 'video':
         previewBody.innerHTML = `<video controls autoplay><source src="${fileUrl}" />Your browser does not support video.</video>`;
@@ -134,7 +154,10 @@ async function previewFile(pathEnc, name) {
         try {
           const textRes = await fetch(fileUrl);
           const text = await textRes.text();
-          previewBody.innerHTML = `<pre>${escHtml(text)}</pre>`;
+          previewBody.innerHTML = `<pre id="textContent">${escHtml(text)}</pre>`;
+          editBtn.style.display = 'inline-block';
+          fontControl.style.display = 'flex';
+          applyFontSize();
         } catch {
           previewBody.innerHTML = '<div class="preview-fallback">Could not load text content</div>';
         }
@@ -147,6 +170,127 @@ async function previewFile(pathEnc, name) {
     }
   } catch (err) {
     previewBody.innerHTML = `<div class="preview-fallback">Error: ${err.message}</div>`;
+  }
+}
+
+// ─── Font size control ────────────────────────────────
+let savedFontSize = localStorage.getItem('ls-font-size') || 15;
+
+function applyFontSize() {
+  const pre = document.querySelector('#textContent');
+  if (pre) pre.style.fontSize = savedFontSize + 'px';
+  fontSizeSlider.value = savedFontSize;
+  fontSizeLabel.textContent = savedFontSize + 'px';
+}
+
+fontSizeSlider.addEventListener('input', () => {
+  savedFontSize = parseInt(fontSizeSlider.value);
+  fontSizeLabel.textContent = savedFontSize + 'px';
+  localStorage.setItem('ls-font-size', savedFontSize);
+  const pre = document.querySelector('#textContent');
+  if (pre) pre.style.fontSize = savedFontSize + 'px';
+  // Also update textarea if in edit mode
+  const editor = document.querySelector('.editor');
+  if (editor) editor.style.fontSize = savedFontSize + 'px';
+});
+
+fontResetBtn.addEventListener('click', () => {
+  savedFontSize = 15;
+  localStorage.setItem('ls-font-size', '15');
+  fontSizeSlider.value = 15;
+  fontSizeLabel.textContent = '15px';
+  applyFontSize();
+});
+
+// ─── Text Editor ──────────────────────────────────────
+editBtn.addEventListener('click', enterEditMode);
+
+async function enterEditMode() {
+  try {
+    const res = await fetch(`/api/content?path=${encodeURIComponent(currentFilePath)}`);
+    if (!res.ok) throw new Error('Failed to load content');
+    const data = await res.json();
+
+    const textarea = document.createElement('textarea');
+    textarea.className = 'editor';
+    textarea.value = data.content;
+    textarea.style.fontSize = savedFontSize + 'px';
+    previewBody.innerHTML = '';
+    previewBody.appendChild(textarea);
+
+    isEditMode = true;
+    editBtn.style.display = 'none';
+    saveBar.style.display = 'flex';
+    saveStatus.textContent = '';
+  } catch (err) {
+    showToast(`Error: ${err.message}`, 'error');
+  }
+}
+
+cancelEditBtn.addEventListener('click', exitEditMode);
+
+function exitEditMode() {
+  isEditMode = false;
+  saveBar.style.display = 'none';
+  // Reload preview
+  previewFile(encodeURIComponent(currentFilePath), previewTitle.textContent);
+}
+
+saveBtn.addEventListener('click', async () => {
+  const editor = document.querySelector('.editor');
+  if (!editor) return;
+
+  const content = editor.value;
+  saveStatus.textContent = 'Saving...';
+  saveStatus.className = 'save-status';
+
+  try {
+    const res = await fetch('/api/save', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path: currentFilePath, content }),
+    });
+    if (!res.ok) throw new Error((await res.json()).error);
+
+    saveStatus.textContent = '✅ Saved!';
+    saveStatus.className = 'save-status saved';
+    setTimeout(() => {
+      exitEditMode();
+    }, 1000);
+  } catch (err) {
+    saveStatus.textContent = `❌ Error: ${err.message}`;
+    saveStatus.className = 'save-status error';
+  }
+});
+
+// ─── Remove C2PA ──────────────────────────────────────
+cleanC2paBtn.addEventListener('click', removeC2pa);
+
+async function removeC2pa() {
+  if (!confirm('Remove C2PA/metadata from this image? A new clean copy will be created.')) return;
+
+  cleanC2paBtn.textContent = '⏳ Processing...';
+  cleanC2paBtn.disabled = true;
+
+  try {
+    const res = await fetch('/api/remove-c2pa', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path: currentFilePath }),
+    });
+    if (!res.ok) throw new Error((await res.json()).error);
+
+    const data = await res.json();
+    showToast(`✅ Clean image created: ${data.file.name} (${data.file.size_human})`);
+    // Refresh current directory to show new file
+    loadDir(currentPath);
+    // Close preview
+    previewModal.classList.remove('active');
+  } catch (err) {
+    showToast(`Error: ${err.message}`, 'error');
+  } finally {
+    cleanC2paBtn.textContent = '🧹 Remove C2PA';
+    cleanC2paBtn.disabled = false;
   }
 }
 
@@ -230,7 +374,6 @@ async function uploadFiles(files) {
     progressFill.style.width = '100%';
     progressText.textContent = 'Upload complete!';
 
-    // Show results
     uploadResults.style.display = 'block';
     let html = '<h3 style="margin-bottom:8px;color:var(--success)">✅ Uploaded files:</h3><ul style="font-size:0.85rem;list-style:none">';
     for (const f of result.files) {
@@ -316,8 +459,8 @@ async function searchFiles(q) {
 
     fileList.innerHTML = data.items.map(item => {
       const clickAction = item.is_dir
-        ? `onclick="loadDir('${item.path}')"`
-        : `onclick="previewFile('${encodeURIComponent(item.path)}', '${escHtml(item.name)}')"`;
+        ? `onclick="loadDir('${item.path.replace(/'/g, "\\'")}')"`
+        : `onclick="previewFile('${encodeURIComponent(item.path)}', '${escHtml(item.name).replace(/'/g, "\\'")}')"`;
       return `<tr class="${item.is_dir ? 'directory' : ''}" ${clickAction}>
         <td class="col-icon">${item.icon}</td>
         <td class="col-name">${escHtml(item.name)}</td>
@@ -349,9 +492,19 @@ function escHtml(str) {
 // ─── Keyboard shortcuts ──────────────────────────────
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
+    if (isEditMode) {
+      exitEditMode();
+      return;
+    }
     previewModal.classList.remove('active');
     folderModal.classList.remove('active');
     closeUploadModal();
+  }
+  if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+    if (isEditMode) {
+      e.preventDefault();
+      saveBtn.click();
+    }
   }
   if ((e.ctrlKey || e.metaKey) && e.key === 'u') {
     e.preventDefault();

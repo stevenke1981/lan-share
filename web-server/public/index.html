@@ -29,7 +29,6 @@
 
   <!-- Main content -->
   <main class="main">
-    <!-- File list -->
     <div class="file-container">
       <table class="file-table" id="fileTable">
         <thead>
@@ -102,12 +101,27 @@
       <div class="modal-header">
         <h2 id="previewTitle">Preview</h2>
         <div class="preview-actions">
+          <button class="btn btn-secondary" id="editBtn" style="display:none">✏️ Edit</button>
+          <button class="btn btn-secondary" id="cleanC2paBtn" style="display:none">🧹 Remove C2PA</button>
           <button class="btn btn-secondary" id="downloadBtn">⬇ Download</button>
           <button class="close-btn" id="closePreview">&times;</button>
         </div>
       </div>
+      <!-- Font size control (only visible for text) -->
+      <div class="font-control" id="fontControl" style="display:none">
+        <label>Font size:</label>
+        <input type="range" id="fontSizeSlider" min="10" max="32" value="15" />
+        <span class="font-size-label" id="fontSizeLabel">15px</span>
+        <button class="btn btn-sm" id="fontResetBtn">Reset</button>
+      </div>
       <div class="modal-body preview-body" id="previewBody">
         <div class="preview-loading">Loading preview...</div>
+      </div>
+      <!-- Save bar for editor -->
+      <div class="save-bar" id="saveBar" style="display:none">
+        <button class="btn btn-primary" id="saveBtn">💾 Save</button>
+        <button class="btn btn-secondary" id="cancelEditBtn">Cancel</button>
+        <span class="save-status" id="saveStatus"></span>
       </div>
     </div>
   </div>

@@ -186,6 +186,8 @@ EOF
 
 sudo systemctl daemon-reload
 sudo systemctl enable --now ${SERVICE_NAME}.service
+# Fix ownership so the web server can write files (saves, uploads, etc.)
+sudo chown -R "$USER:$USER" "$SHARE_DIR"
 echo -e "  ${GREEN}✓${NC} Web server started (port $WEB_PORT)"
 
 # ---- 6. Create README in share ----
