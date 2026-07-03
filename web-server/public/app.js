@@ -349,34 +349,37 @@ function openImageEditor() {
     return;
   }
 
-  isImageEditorOpen = true;
-  previewModal.style.display = 'none';
-
-  // Pre-set canvas to viewport size immediately
-  resizeCanvas();
-
-  imgEditor.image = new Image();
-  imgEditor.image.onload = () => {
-    imgEditor.imgWidth = imgEditor.image.naturalWidth;
-    imgEditor.imgHeight = imgEditor.image.naturalHeight;
+  const startEditor = (imageEl) => {
+    imgEditor.image = imageEl;
+    imgEditor.imgWidth = imageEl.naturalWidth;
+    imgEditor.imgHeight = imageEl.naturalHeight;
     imgEditor.actions = [];
     imgEditor.scale = 1;
     imgEditor.offsetX = 0;
     imgEditor.offsetY = 0;
 
-    // Show toolbar + canvas (canvas already has correct dimensions)
+    isImageEditorOpen = true;
+    previewModal.style.display = 'none';
+
+    // Show toolbar + canvas, then size & render
     imgEditorToolbar.style.display = 'flex';
     imgEditorCanvas.classList.add('active');
 
+    resizeCanvas();
     fitToScreen();
     renderCanvas();
   };
-  imgEditor.image.onerror = () => {
-    showToast('Failed to load image for editing', 'error');
-    closeImageEditor();
-  };
-  // Use the image src from the preview (not crossOrigin to avoid issues)
-  imgEditor.image.src = img.src;
+
+  // The preview <img> is already loaded & displayed — use it directly.
+  if (img.complete && img.naturalWidth > 0) {
+    startEditor(img);
+  } else {
+    // Fallback: wait for it to load
+    const tmp = new Image();
+    tmp.onload = () => startEditor(tmp);
+    tmp.onerror = () => showToast('Failed to load image for editing', 'error');
+    tmp.src = img.src;
+  }
 }
 
 function closeImageEditor() {
