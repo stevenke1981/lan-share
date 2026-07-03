@@ -343,14 +343,16 @@ async function deleteItem(pathEnc, name) {
 editImageBtn.addEventListener('click', openImageEditor);
 
 function openImageEditor() {
-  const img = previewBody.querySelector('img');
-  if (!img) return;
+  let img = previewBody.querySelector('img');
+  // Fallback: try to find the image URL from the preview
+  if (!img) {
+    const fileUrl = `/files/${encodeURIComponent(currentFilePath)}`;
+    img = { src: fileUrl };
+  }
 
   isImageEditorOpen = true;
-  previewModal.style.display = 'none'; // hide preview, show editor
 
   imgEditor.image = new Image();
-  imgEditor.image.crossOrigin = 'anonymous';
   imgEditor.image.onload = () => {
     imgEditor.imgWidth = imgEditor.image.naturalWidth;
     imgEditor.imgHeight = imgEditor.image.naturalHeight;
@@ -359,11 +361,20 @@ function openImageEditor() {
     imgEditor.offsetX = 0;
     imgEditor.offsetY = 0;
 
+    // Show editor toolbar and canvas on top of everything
     imgEditorToolbar.style.display = 'flex';
     imgEditorCanvas.classList.add('active');
-    resizeCanvas();
-    fitToScreen();
-    renderCanvas();
+
+    // Force layout then size canvas
+    requestAnimationFrame(() => {
+      resizeCanvas();
+      fitToScreen();
+      renderCanvas();
+    });
+  };
+  imgEditor.image.onerror = () => {
+    showToast('Failed to load image for editing', 'error');
+    closeImageEditor();
   };
   imgEditor.image.src = img.src;
 }
@@ -372,14 +383,13 @@ function closeImageEditor() {
   isImageEditorOpen = false;
   imgEditorToolbar.style.display = 'none';
   imgEditorCanvas.classList.remove('active');
-  previewModal.style.display = ''; // restore preview
 }
 
 // ─── Canvas sizing ────────────────────────────────────
 function resizeCanvas() {
   const rect = imgEditorCanvas.getBoundingClientRect();
-  imageCanvas.width = rect.width;
-  imageCanvas.height = rect.height;
+  imageCanvas.width = Math.max(rect.width, 100);
+  imageCanvas.height = Math.max(rect.height, 100);
   imgEditor.needsRender = true;
 }
 
