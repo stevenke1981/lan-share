@@ -350,10 +350,11 @@ function openImageEditor() {
   }
 
   isImageEditorOpen = true;
-  // Hide preview modal entirely — full-screen editor takes over
   previewModal.style.display = 'none';
 
-  // Reuse the fixed canvas (already in DOM)
+  // Pre-set canvas to viewport size immediately
+  resizeCanvas();
+
   imgEditor.image = new Image();
   imgEditor.image.onload = () => {
     imgEditor.imgWidth = imgEditor.image.naturalWidth;
@@ -363,22 +364,18 @@ function openImageEditor() {
     imgEditor.offsetX = 0;
     imgEditor.offsetY = 0;
 
-    // Show toolbar + canvas
+    // Show toolbar + canvas (canvas already has correct dimensions)
     imgEditorToolbar.style.display = 'flex';
     imgEditorCanvas.classList.add('active');
 
-    // Must wait a frame for layout
-    requestAnimationFrame(() => {
-      resizeCanvas();
-      fitToScreen();
-      renderCanvas();
-    });
+    fitToScreen();
+    renderCanvas();
   };
   imgEditor.image.onerror = () => {
     showToast('Failed to load image for editing', 'error');
     closeImageEditor();
   };
-  // Use the image src from the preview
+  // Use the image src from the preview (not crossOrigin to avoid issues)
   imgEditor.image.src = img.src;
 }
 
@@ -398,22 +395,22 @@ function reloadPreview() {
 
 // ─── Canvas sizing ────────────────────────────────────
 function resizeCanvas() {
-  const rect = imgEditorCanvas.getBoundingClientRect();
-  imageCanvas.width = Math.max(rect.width, 100);
-  imageCanvas.height = Math.max(rect.height, 100);
+  // Use viewport dimensions directly — more reliable than getBoundingClientRect
+  const toolbarH = 52; // matches CSS top:52px
+  imageCanvas.width = window.innerWidth;
+  imageCanvas.height = window.innerHeight - toolbarH;
   imgEditor.needsRender = true;
 }
 
 function fitToScreen() {
-  const rect = imgEditorCanvas.getBoundingClientRect();
   const pad = 40;
-  const availW = rect.width - pad * 2;
-  const availH = rect.height - pad * 2;
+  const availW = imageCanvas.width - pad * 2;
+  const availH = imageCanvas.height - pad * 2;
   const scaleX = availW / imgEditor.imgWidth;
   const scaleY = availH / imgEditor.imgHeight;
-  imgEditor.scale = Math.min(scaleX, scaleY, 2); // cap at 2x
-  imgEditor.offsetX = (rect.width - imgEditor.imgWidth * imgEditor.scale) / 2;
-  imgEditor.offsetY = (rect.height - imgEditor.imgHeight * imgEditor.scale) / 2;
+  imgEditor.scale = Math.min(scaleX, scaleY, 2);
+  imgEditor.offsetX = (imageCanvas.width - imgEditor.imgWidth * imgEditor.scale) / 2;
+  imgEditor.offsetY = (imageCanvas.height - imgEditor.imgHeight * imgEditor.scale) / 2;
   updateZoomInfo();
 }
 
@@ -547,7 +544,7 @@ function drawAction(context, action, invScale) {
 
 // ─── Coordinate conversion ────────────────────────────
 function screenToImage(clientX, clientY) {
-  const rect = imgEditorCanvas.getBoundingClientRect();
+  const rect = imageCanvas.getBoundingClientRect();
   const sx = clientX - rect.left;
   const sy = clientY - rect.top;
   return {
@@ -682,7 +679,7 @@ function onMouseUp(e) {
 
 function onWheel(e) {
   e.preventDefault();
-  const rect = imgEditorCanvas.getBoundingClientRect();
+  const rect = imageCanvas.getBoundingClientRect();
   const mx = e.clientX - rect.left;
   const my = e.clientY - rect.top;
 
