@@ -1,6 +1,6 @@
 {
   "name": "lan-share-web",
-  "version": "1.0.0",
+  "version": "1.3.0",
   "description": "LAN Share — web file browser for home network",
   "main": "server.js",
   "scripts": {

@@ -13,17 +13,28 @@ const express = require('express');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
+const fsPromises = require('fs/promises');
 const os = require('os');
+const mime = require('mime-types');
 const { stripC2pa } = require('./strip-c2pa');
 const { categorize, normalizeFilename } = require('./categorize');
-const { PathTraversalError, resolveSafePath } = require('./lib/path-utils');
+const {
+  PathTraversalError,
+  resolveSafePath,
+  resolveRealSafePath,
+  resolveRealSafeParent,
+} = require('./lib/path-utils');
 const {
   createAuthMiddleware,
   loadCredentials,
   resolveAuthFile,
+  hashPassword,
+  verifyPassword,
 } = require('./lib/auth');
 
-const VERSION = '1.2.0';
+// Read version from package.json (single source of truth)
+const pkg = require('./package.json');
+const VERSION = pkg.version || '1.3.0';
 
 // ─── Configuration ────────────────────────────────────
 const SHARE_DIR = path.resolve(process.argv.includes('--dir')
@@ -36,6 +47,10 @@ const MAX_FILE_SIZE = parseInt(process.env.MAX_FILE_SIZE || (500 * 1024 * 1024).
 const AUTH_METHOD = (process.env.AUTH_METHOD || 'noauth').toLowerCase();
 const AUTH_FILE = resolveAuthFile(SHARE_DIR, process.env.AUTH_FILE);
 
+// Search limits
+const MAX_SEARCH_DEPTH = parseInt(process.env.MAX_SEARCH_DEPTH || '12', 10);
+const MAX_SEARCH_RESULTS = 100;
+
 // ─── Ensure share directory exists ────────────────────
 if (!fs.existsSync(SHARE_DIR)) {
   console.error(`Share directory does not exist: ${SHARE_DIR}`);
@@ -43,7 +58,7 @@ if (!fs.existsSync(SHARE_DIR)) {
 }
 
 const app = express();
-app.use(express.json({ limit: '50mb' }));
+app.use(express.json({ limit: '10mb' })); // reduced from 50mb — uploads go through multer
 
 const authCredentials = AUTH_METHOD === 'json' ? loadCredentials(AUTH_FILE) : null;
 const auth = createAuthMiddleware({
@@ -97,12 +112,19 @@ const upload = multer({
 
 // ─── Helpers ──────────────────────────────────────────
 function safeResolve(relPath) {
-  return resolveSafePath(SHARE_DIR, relPath);
+  return resolveRealSafePath(SHARE_DIR, relPath);
+}
+
+function safeResolveParent(relPath) {
+  return resolveRealSafeParent(SHARE_DIR, relPath);
 }
 
 function handleRouteError(res, err) {
   if (err instanceof PathTraversalError) {
     return res.status(err.statusCode).json({ error: err.message });
+  }
+  if (err.code === 'ENOENT') {
+    return res.status(404).json({ error: 'Path not found' });
   }
   return res.status(500).json({ error: err.message });
 }
@@ -159,14 +181,15 @@ function getPreviewType(filename) {
   return null;
 }
 
-function listDir(dirPath) {
-  const entries = fs.readdirSync(dirPath, { withFileTypes: true });
+// Async version of listDir
+async function listDirAsync(dirPath) {
+  const entries = await fsPromises.readdir(dirPath, { withFileTypes: true });
   const items = [];
 
   for (const entry of entries) {
     if (entry.name.startsWith('.')) continue; // skip hidden
     const fullPath = path.join(dirPath, entry.name);
-    const stat = fs.statSync(fullPath);
+    const stat = await fsPromises.stat(fullPath);
 
     items.push({
       name: entry.name,
@@ -217,20 +240,25 @@ if (auth.login) {
   app.post('/api/logout', auth.logout);
 }
 
-// GET /api/list?path=... — list directory contents
-app.get('/api/list', (req, res) => {
+// GET /api/list?path=... — list directory contents (async)
+app.get('/api/list', async (req, res) => {
   try {
     const relPath = req.query.path || '';
     const targetPath = safeResolve(relPath);
 
-    if (!fs.existsSync(targetPath)) {
-      return res.status(404).json({ error: 'Path not found' });
-    }
-    if (!fs.statSync(targetPath).isDirectory()) {
-      return res.status(400).json({ error: 'Not a directory' });
+    try {
+      const stat = await fsPromises.stat(targetPath);
+      if (!stat.isDirectory()) {
+        return res.status(400).json({ error: 'Not a directory' });
+      }
+    } catch (err) {
+      if (err.code === 'ENOENT') {
+        return res.status(404).json({ error: 'Path not found' });
+      }
+      throw err;
     }
 
-    const items = listDir(targetPath);
+    const items = await listDirAsync(targetPath);
     const breadcrumbs = getRelativePath(targetPath).split(path.sep).filter(Boolean);
 
     res.json({
@@ -263,8 +291,8 @@ app.post('/api/upload', (req, res, next) => {
   });
 });
 
-// POST /api/mkdir — create directory
-app.post('/api/mkdir', (req, res) => {
+// POST /api/mkdir — create directory (async)
+app.post('/api/mkdir', async (req, res) => {
   try {
     const relPath = req.body.path || '';
     const dirName = req.body.name;
@@ -273,53 +301,88 @@ app.post('/api/mkdir', (req, res) => {
       return res.status(400).json({ error: 'Invalid folder name' });
     }
 
-    const parentPath = safeResolve(relPath);
+    const parentPath = safeResolveParent(relPath);
     const targetPath = path.join(parentPath, dirName);
-    safeResolve(path.relative(SHARE_DIR, targetPath));
-    if (fs.existsSync(targetPath)) {
+    // Validate target is within share dir
+    resolveSafePath(SHARE_DIR, path.relative(SHARE_DIR, targetPath));
+
+    try {
+      await fsPromises.access(targetPath);
       return res.status(409).json({ error: 'Already exists' });
+    } catch (e) {
+      if (e.code !== 'ENOENT') throw e;
     }
 
-    fs.mkdirSync(targetPath, { recursive: true });
+    await fsPromises.mkdir(targetPath, { recursive: true });
     res.json({ success: true, path: getRelativePath(targetPath) });
   } catch (err) {
     handleRouteError(res, err);
   }
 });
 
-// DELETE /api/delete — delete file or directory
-app.delete('/api/delete', (req, res) => {
+// DELETE /api/delete — delete file or directory (async)
+app.delete('/api/delete', async (req, res) => {
   try {
     const relPath = req.body.path;
     if (!relPath) return res.status(400).json({ error: 'Path required' });
 
     const targetPath = safeResolve(relPath);
-    if (!fs.existsSync(targetPath)) {
-      return res.status(404).json({ error: 'Not found' });
+    try {
+      await fsPromises.access(targetPath);
+    } catch (e) {
+      if (e.code === 'ENOENT') return res.status(404).json({ error: 'Not found' });
+      throw e;
     }
 
-    fs.rmSync(targetPath, { recursive: true, force: true });
+    await fsPromises.rm(targetPath, { recursive: true, force: true });
     res.json({ success: true });
   } catch (err) {
     handleRouteError(res, err);
   }
 });
 
-// GET /api/search?q=... — search files
-app.get('/api/search', (req, res) => {
+// GET /api/search?q=... — search files (async + depth limit + cycle protection)
+app.get('/api/search', async (req, res) => {
   try {
     const query = (req.query.q || '').toLowerCase();
     if (!query) return res.json({ items: [] });
 
     const results = [];
-    function walk(dir) {
-      const entries = fs.readdirSync(dir, { withFileTypes: true });
+    const visited = new Set();
+
+    async function walk(dirPath, depth) {
+      if (depth > MAX_SEARCH_DEPTH) return;
+      if (results.length >= MAX_SEARCH_RESULTS) return;
+
+      // Cycle protection: track realpath
+      let realDir;
+      try {
+        realDir = await fsPromises.realpath(dirPath);
+      } catch {
+        return; // inaccessible, skip
+      }
+      if (visited.has(realDir)) return;
+      visited.add(realDir);
+
+      let entries;
+      try {
+        entries = await fsPromises.readdir(dirPath, { withFileTypes: true });
+      } catch {
+        return; // permission error, skip
+      }
+
       for (const entry of entries) {
         if (entry.name.startsWith('.')) continue;
-        if (results.length >= 100) break;
-        const fullPath = path.join(dir, entry.name);
+        if (results.length >= MAX_SEARCH_RESULTS) break;
+        const fullPath = path.join(dirPath, entry.name);
+
         if (entry.name.toLowerCase().includes(query)) {
-          const stat = fs.statSync(fullPath);
+          let stat;
+          try {
+            stat = await fsPromises.stat(fullPath);
+          } catch {
+            continue; // broken symlink, skip
+          }
           results.push({
             name: entry.name,
             path: getRelativePath(fullPath),
@@ -328,18 +391,21 @@ app.get('/api/search', (req, res) => {
             icon: entry.isDirectory() ? '📁' : getFileIcon(entry.name),
           });
         }
-        if (entry.isDirectory()) walk(fullPath);
+        if (entry.isDirectory()) {
+          await walk(fullPath, depth + 1);
+        }
       }
     }
-    walk(SHARE_DIR);
+
+    await walk(SHARE_DIR, 0);
     res.json({ items: results });
   } catch (err) {
     handleRouteError(res, err);
   }
 });
 
-// PUT /api/save — save file content (text editing)
-app.put('/api/save', (req, res) => {
+// PUT /api/save — save file content (text editing, async)
+app.put('/api/save', async (req, res) => {
   try {
     const relPath = req.body.path;
     const content = req.body.content;
@@ -348,27 +414,33 @@ app.put('/api/save', (req, res) => {
       return res.status(400).json({ error: 'Path and content required' });
     }
 
-    const filePath = safeResolve(relPath);
-    if (!fs.existsSync(filePath)) {
-      return res.status(404).json({ error: 'File not found' });
+    const filePath = safeResolveParent(relPath);
+    try {
+      await fsPromises.access(filePath);
+    } catch (e) {
+      if (e.code === 'ENOENT') return res.status(404).json({ error: 'File not found' });
+      throw e;
     }
 
-    fs.writeFileSync(filePath, content, 'utf-8');
+    await fsPromises.writeFile(filePath, content, 'utf-8');
     res.json({ success: true });
   } catch (err) {
     handleRouteError(res, err);
   }
 });
 
-// POST /api/remove-c2pa — strip C2PA/metadata from image
-app.post('/api/remove-c2pa', (req, res) => {
+// POST /api/remove-c2pa — strip C2PA/metadata from image (async)
+app.post('/api/remove-c2pa', async (req, res) => {
   try {
     const relPath = req.body.path;
     if (!relPath) return res.status(400).json({ error: 'Path required' });
 
     const filePath = safeResolve(relPath);
-    if (!fs.existsSync(filePath)) {
-      return res.status(404).json({ error: 'File not found' });
+    try {
+      await fsPromises.access(filePath);
+    } catch (e) {
+      if (e.code === 'ENOENT') return res.status(404).json({ error: 'File not found' });
+      throw e;
     }
 
     const ext = path.extname(filePath).toLowerCase();
@@ -382,12 +454,13 @@ app.post('/api/remove-c2pa', (req, res) => {
     const newName = `${base}_clean${ext}`;
     const outputPath = path.join(dir, newName);
 
+    // StripC2PA is synchronous (CPU-bound small files) — ok to keep sync
     const success = stripC2pa(filePath, outputPath);
     if (!success) {
       return res.status(500).json({ error: 'Failed to remove metadata' });
     }
 
-    const stat = fs.statSync(outputPath);
+    const stat = await fsPromises.stat(outputPath);
     res.json({
       success: true,
       file: {
@@ -402,26 +475,29 @@ app.post('/api/remove-c2pa', (req, res) => {
   }
 });
 
-// GET /api/content?path=... — get text file content for editing
-app.get('/api/content', (req, res) => {
+// GET /api/content?path=... — get text file content for editing (async)
+app.get('/api/content', async (req, res) => {
   try {
     const relPath = req.query.path || '';
     if (!relPath) return res.status(400).json({ error: 'Path required' });
 
     const filePath = safeResolve(relPath);
-    if (!fs.existsSync(filePath)) {
-      return res.status(404).json({ error: 'File not found' });
+    try {
+      await fsPromises.access(filePath);
+    } catch (e) {
+      if (e.code === 'ENOENT') return res.status(404).json({ error: 'File not found' });
+      throw e;
     }
 
-    const content = fs.readFileSync(filePath, 'utf-8');
+    const content = await fsPromises.readFile(filePath, 'utf-8');
     res.json({ content });
   } catch (err) {
     handleRouteError(res, err);
   }
 });
 
-// POST /api/upload-edited — save edited image (base64)
-app.post('/api/upload-edited', (req, res) => {
+// POST /api/upload-edited — save edited image (base64, async)
+app.post('/api/upload-edited', async (req, res) => {
   try {
     const { path: relPath, dataUrl } = req.body;
     if (!relPath || !dataUrl) {
@@ -444,20 +520,27 @@ app.post('/api/upload-edited', (req, res) => {
     const newName = `${base}_edited${ext}`;
     const outputPath = path.join(dir, newName);
 
-    // Ensure directory exists
-    fs.mkdirSync(dir, { recursive: true });
+    // Ensure directory exists (parent must be safe)
+    const parentReal = safeResolveParent(path.relative(SHARE_DIR, dir));
+    await fsPromises.mkdir(parentReal, { recursive: true });
 
     // Handle overwrites
     let finalName = newName;
     let finalPath = outputPath;
     let counter = 1;
-    while (fs.existsSync(finalPath)) {
-      finalName = `${base}_edited(${counter})${ext}`;
-      finalPath = path.join(dir, finalName);
-      counter++;
+    while (true) {
+      try {
+        await fsPromises.access(finalPath);
+        finalName = `${base}_edited(${counter})${ext}`;
+        finalPath = path.join(dir, finalName);
+        counter++;
+      } catch (e) {
+        if (e.code === 'ENOENT') break;
+        throw e;
+      }
     }
 
-    fs.writeFileSync(finalPath, buffer);
+    await fsPromises.writeFile(finalPath, buffer);
 
     res.json({
       success: true,
@@ -473,37 +556,176 @@ app.post('/api/upload-edited', (req, res) => {
   }
 });
 
-// ─── Serve files (for download/preview) ──────────────
-app.get('/files/*', (req, res) => {
+// POST /api/rename — rename or move file/directory
+app.post('/api/rename', async (req, res) => {
+  try {
+    const { from, to } = req.body;
+    if (!from || !to) {
+      return res.status(400).json({ error: 'Both "from" and "to" paths required' });
+    }
+
+    if (to.includes('..') || /[\\/]/.test(path.basename(to))) {
+      return res.status(400).json({ error: 'Invalid target path' });
+    }
+
+    // Source must exist
+    let sourcePath;
+    try {
+      sourcePath = safeResolve(from);
+      await fsPromises.access(sourcePath);
+    } catch (e) {
+      if (e.code === 'ENOENT') return res.status(404).json({ error: 'Source not found' });
+      throw e;
+    }
+
+    // Target: validate parent directory is safe
+    const targetPath = safeResolveParent(to);
+
+    // Check if target already exists
+    try {
+      await fsPromises.access(targetPath);
+      return res.status(409).json({ error: 'Target already exists' });
+    } catch (e) {
+      if (e.code !== 'ENOENT') throw e;
+    }
+
+    // Rename across devices: handle EXDEV by copy+delete
+    try {
+      await fsPromises.rename(sourcePath, targetPath);
+    } catch (err) {
+      if (err.code === 'EXDEV') {
+        // Cross-device: copy then delete
+        const stat = await fsPromises.stat(sourcePath);
+        if (stat.isDirectory()) {
+          await copyDirRecursive(sourcePath, targetPath);
+          await fsPromises.rm(sourcePath, { recursive: true, force: true });
+        } else {
+          await fsPromises.copyFile(sourcePath, targetPath);
+          await fsPromises.unlink(sourcePath);
+        }
+      } else {
+        throw err;
+      }
+    }
+
+    res.json({ success: true, path: getRelativePath(targetPath) });
+  } catch (err) {
+    handleRouteError(res, err);
+  }
+});
+
+// Helper: recursive directory copy for cross-device rename
+async function copyDirRecursive(src, dest) {
+  await fsPromises.mkdir(dest, { recursive: true });
+  const entries = await fsPromises.readdir(src, { withFileTypes: true });
+  for (const entry of entries) {
+    const srcPath = path.join(src, entry.name);
+    const destPath = path.join(dest, entry.name);
+    if (entry.isDirectory()) {
+      await copyDirRecursive(srcPath, destPath);
+    } else {
+      await fsPromises.copyFile(srcPath, destPath);
+    }
+  }
+}
+
+// ─── Serve files (for download/preview) — HTTP Range support ───
+const STREAMABLE_EXTS = new Set([
+  '.mp4', '.webm', '.mov', '.avi', '.mkv', '.m4v',
+  '.mp3', '.wav', '.flac', '.aac', '.ogg', '.m4a', '.opus',
+  '.pdf',
+]);
+
+app.get('/files/*', async (req, res) => {
   let filePath;
   try {
     const relPath = req.params[0] || '';
     filePath = safeResolve(relPath);
   } catch (err) {
+    if (err.code === 'ENOENT') {
+      return res.status(404).send('Not found');
+    }
     return res.status(err.statusCode || 403).send(err.message);
   }
 
-  if (!fs.existsSync(filePath)) {
+  try {
+    await fsPromises.access(filePath);
+  } catch {
     return res.status(404).send('Not found');
   }
 
-  const stat = fs.statSync(filePath);
+  const stat = await fsPromises.stat(filePath);
   if (stat.isDirectory()) {
-    return res.redirect('/?path=' + encodeURIComponent(relPath));
+    return res.redirect('/?path=' + encodeURIComponent(req.params[0] || ''));
   }
 
-  // Force audio/video files to download instead of playing inline
   const ext = path.extname(filePath).toLowerCase();
-  const audioExts = ['.mp3', '.wav', '.flac', '.aac', '.ogg', '.m4a', '.opus'];
-  const videoExts = ['.mp4', '.webm', '.mov', '.avi', '.mkv'];
-  const isAudio = audioExts.includes(ext);
-  const isVideo = videoExts.includes(ext);
+  const fileName = path.basename(filePath);
 
-  if (isAudio || isVideo) {
-    res.download(filePath);
-  } else {
-    res.sendFile(filePath);
+  // Force download if ?download=1
+  const isDownload = req.query.download === '1';
+
+  if (isDownload) {
+    res.download(filePath, fileName);
+    return;
   }
+
+  // For non-streamable files, use sendFile as before
+  if (!STREAMABLE_EXTS.has(ext)) {
+    // Images, text files, etc. use the existing sendFile behavior
+    if (['.jpg', '.jpeg', '.png', '.gif', '.webp', '.svg', '.bmp', '.ico'].includes(ext) ||
+        ['.txt', '.md', '.json', '.csv', '.xml', '.log', '.yaml', '.yml', '.toml',
+         '.js', '.ts', '.jsx', '.tsx', '.py', '.rb', '.sh', '.bash', '.html', '.css',
+         '.sql', '.ini', '.cfg', '.conf', '.env'].includes(ext)) {
+      res.sendFile(filePath);
+      return;
+    }
+    // Other non-streamable files: download
+    res.download(filePath, fileName);
+    return;
+  }
+
+  // ─── HTTP Range streaming ──────────────────────────
+  const fileSize = stat.size;
+  const contentType = mime.lookup(filePath) || 'application/octet-stream';
+  const rangeHeader = req.headers.range;
+
+  if (!rangeHeader) {
+    // No range header: send full file with Accept-Ranges
+    res.writeHead(200, {
+      'Content-Type': contentType,
+      'Content-Length': fileSize,
+      'Accept-Ranges': 'bytes',
+      'Content-Disposition': 'inline',
+    });
+    fs.createReadStream(filePath).pipe(res);
+    return;
+  }
+
+  // Parse range header
+  const parts = rangeHeader.replace(/bytes=/, '').split('-');
+  const start = parseInt(parts[0], 10);
+  const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
+
+  if (isNaN(start) || isNaN(end) || start > end || start >= fileSize) {
+    res.writeHead(416, {
+      'Content-Range': `bytes */${fileSize}`,
+    });
+    return res.end();
+  }
+
+  const chunkSize = Math.min(end - start + 1, fileSize - start);
+  const stream = fs.createReadStream(filePath, { start, end: start + chunkSize - 1 });
+
+  res.writeHead(206, {
+    'Content-Range': `bytes ${start}-${start + chunkSize - 1}/${fileSize}`,
+    'Content-Type': contentType,
+    'Content-Length': chunkSize,
+    'Accept-Ranges': 'bytes',
+    'Content-Disposition': 'inline',
+  });
+
+  stream.pipe(res);
 });
 
 // ─── Error handling ───────────────────────────────────
@@ -531,7 +753,7 @@ app.get('*', (req, res) => {
 });
 
 // ─── Start ────────────────────────────────────────────
-app.listen(PORT, '0.0.0.0', () => {
+const server = app.listen(PORT, '0.0.0.0', () => {
   const nets = os.networkInterfaces();
   const addresses = [];
   for (const name of Object.keys(nets)) {
@@ -545,6 +767,7 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log('');
   console.log('╔═══════════════════════════════════════════╗');
   console.log('║       LAN Share — Web File Browser       ║');
+  console.log(`║       Version ${VERSION.padEnd(31)}║`);
   console.log('╠═══════════════════════════════════════════╣');
   console.log(`║  Local:   http://localhost:${PORT}            ║`);
   for (const addr of addresses) {
@@ -560,3 +783,21 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log('╚═══════════════════════════════════════════╝');
   console.log('');
 });
+
+// ─── Graceful shutdown ────────────────────────────────
+for (const sig of ['SIGTERM', 'SIGINT']) {
+  process.on(sig, () => {
+    console.log(`\nReceived ${sig}. Shutting down gracefully...`);
+    server.close(() => {
+      console.log('Server closed. Goodbye!');
+      process.exit(0);
+    });
+    // Force exit if graceful shutdown takes too long
+    setTimeout(() => {
+      console.error('Forced shutdown after timeout.');
+      process.exit(1);
+    }, 10000).unref();
+  });
+}
+
+module.exports = server;

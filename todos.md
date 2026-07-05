@@ -1,39 +1,36 @@
-# LAN Share 改善待辦清單
+# LAN Share 改善待辦清單 — v1.3.0（已完成）
 
-## Phase 1：安全與部署
+> 狀態：**全部已實作並驗證**。66 項測試通過。
 
-- [x] 撰寫 plan.md / spec.md / todos.md / test.md
-- [x] 新增 `web-server/lib/path-utils.js`
-- [x] 重構 `server.js` 使用 `resolveSafePath`
-- [x] 移除未使用的 `crypto` import（改至 auth 模組使用）
-- [x] `server.js` 支援 `WEB_PORT` 與 `FB_PORT`
-- [x] 修正 `setup.sh` systemd 傳遞 `--port` 與環境變數
-- [x] 統一 README 環境變數說明（`WEB_PORT` 為主，`FB_PORT` 相容）
+## Phase A：安全強化
 
-## Phase 2：API 與認證
+- [x] `lib/auth.js`：新增 `hashPassword` / `verifyPassword`（scrypt + salt）
+- [x] `lib/auth.js`：`login` 改用 `verifyPassword`，相容明文舊檔並啟動警告
+- [x] `lib/auth.js`：登入速率限制（per-IP 失敗計數 + 冷卻，429）
+- [x] `lib/path-utils.js`：新增 `resolveRealSafePath`（realpath 防 symlink 逃逸）
+- [x] `server.js`：實際 I/O 路由改用 `resolveRealSafePath`
 
-- [x] 新增 `web-server/lib/auth.js`（輕量 token 認證）
-- [x] 實作 `GET /api/health`
-- [x] 實作 `GET /api/info`
-- [x] 實作 `POST /api/login`
-- [x] 加入 Multer / 全域錯誤處理中介層
-- [x] `setup.sh` 支援 `AUTH_METHOD` 並產生範例 auth 檔
+## Phase B：效能與穩定
 
-## Phase 3：測試
+- [x] `server.js`：`listDir` 改 `fs.promises`
+- [x] `server.js`：`/api/search` 改非同步 + 深度上限 + 循環防護
+- [x] `server.js`：`/api/content`、`/api/save`、`/api/delete`、`/api/mkdir` 改非同步
+- [x] `server.js`：graceful shutdown（SIGTERM/SIGINT）
 
-- [x] 新增 `test/categorize.test.js`
-- [x] 新增 `test/path-utils.test.js`
-- [x] 新增 `test/strip-c2pa.test.js`
-- [x] `package.json` 加入 `npm test`
-- [x] 執行 `npm test` 全數通過（17/17）
+## Phase C：新功能
 
-## Phase 4：前端
+- [x] `server.js`：`GET /files/*` 支援 HTTP Range（206）+ `?download=1`
+- [x] `public/app.js`：影音改內嵌 `<video>`/`<audio>` 預覽（已存在，現可正常串流）
+- [x] `server.js`：`POST /api/rename`（重新命名 / 移動，含 EXDEV cross-device）
+- [x] `public/app.js` + `index.html`：重新命名 UI
 
-- [x] `app.js` 載入 `/api/info` 動態顯示上限
-- [x] 認證 fetch 包裝與登入 UI
-- [x] 改善上傳錯誤訊息
+## Phase D：品質與收尾
 
-## Phase 5：驗收
-
-- [x] 依 test.md 手動驗收
-- [x] 撰寫 final.md
+- [x] `test/auth.test.js`：hash、token、速率限制（21 項）
+- [x] `test/path-utils.test.js`：擴充 symlink 逃逸案例
+- [x] `test/api.test.js`：list / mkdir / rename / delete / 遍歷 403 / Range 206（22 項）
+- [x] 版本統一 1.3.0（`server.js` 讀 `package.json.version`）
+- [x] `mime-types` 已用於 Range 串流的 Content-Type
+- [x] `npm test`：**66/66 通過**
+- [x] 依 `test.md` 驗收完成
+- [x] `final.md` 更新為實作驗收報告

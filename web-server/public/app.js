@@ -57,6 +57,13 @@ const loginPassword = document.getElementById('loginPassword');
 const loginSubmit = document.getElementById('loginSubmit');
 const loginError = document.getElementById('loginError');
 
+// Rename modal refs
+const renameModal = document.getElementById('renameModal');
+const renameInput = document.getElementById('renameInput');
+const closeRenameModal = document.getElementById('closeRenameModal');
+const cancelRename = document.getElementById('cancelRename');
+const confirmRename = document.getElementById('confirmRename');
+
 // ─── Image Editor DOM refs ────────────────────────────
 const imgEditorToolbar = document.getElementById('imgEditorToolbar');
 const imgEditorCanvas = document.getElementById('imgEditorCanvas');
@@ -219,6 +226,7 @@ function renderFiles(data) {
       <td class="col-size">${size}</td>
       <td class="col-date">${date}</td>
       <td class="col-actions">
+        <button class="action-btn" onclick="event.stopPropagation(); showRenameModal('${pathEnc}', '${escName.replace(/'/g, "\\'")}')" title="Rename">✏️</button>
         <button class="action-btn" onclick="event.stopPropagation(); deleteItem('${pathEnc}', '${escName}')" title="Delete">🗑️</button>
       </td>
     </tr>`;
@@ -252,7 +260,8 @@ async function previewFile(pathEnc, name) {
   fontControl.style.display = 'none';
 
   downloadBtn.onclick = () => {
-    window.open(`/files/${encodeURIComponent(currentFilePath)}`, '_blank');
+    // Use ?download=1 to force download (media files stream inline by default)
+    window.open(`/files/${encodeURIComponent(currentFilePath)}?download=1`, '_blank');
   };
 
   try {
@@ -426,6 +435,51 @@ async function deleteItem(pathEnc, name) {
     showToast(`Error: ${err.message}`, 'error');
   }
 }
+
+// ─── Rename modal ────────────────────────────────────
+let renameFromPath = '';
+let renameFromName = '';
+
+function showRenameModal(pathEnc, name) {
+  renameFromPath = decodeURIComponent(pathEnc);
+  renameFromName = name;
+  renameInput.value = name;
+  renameModal.classList.add('active');
+  setTimeout(() => { renameInput.focus(); renameInput.select(); }, 100);
+}
+
+closeRenameModal.addEventListener('click', () => renameModal.classList.remove('active'));
+cancelRename.addEventListener('click', () => renameModal.classList.remove('active'));
+renameModal.addEventListener('click', (e) => {
+  if (e.target === renameModal) renameModal.classList.remove('active');
+});
+renameInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') confirmRename.click();
+});
+
+confirmRename.addEventListener('click', async () => {
+  const newName = renameInput.value.trim();
+  if (!newName) { showToast('Please enter a name'); return; }
+  if (newName.includes('/') || newName.includes('\\')) { showToast('Invalid name'); return; }
+
+  const fromPath = renameFromPath;
+  const dir = fromPath.includes('/') ? fromPath.substring(0, fromPath.lastIndexOf('/')) : '';
+  const toPath = dir ? `${dir}/${newName}` : newName;
+
+  try {
+    const res = await apiFetch('/api/rename', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ from: fromPath, to: toPath }),
+    });
+    if (!res.ok) throw new Error((await res.json()).error);
+    renameModal.classList.remove('active');
+    showToast(`Renamed to: ${newName}`);
+    loadDir(currentPath);
+  } catch (err) {
+    showToast(`Error: ${err.message}`, 'error');
+  }
+});
 
 // ═══════════════════════════════════════════════════════
 // IMAGE EDITOR
@@ -1095,6 +1149,7 @@ document.addEventListener('keydown', (e) => {
     if (textInputModal.classList.contains('active')) { closeTextInputModal(); return; }
     if (isImageEditorOpen) { closeImageEditor(); return; }
     if (isEditMode) { exitEditMode(); return; }
+    renameModal.classList.remove('active');
     previewModal.classList.remove('active');
     folderModal.classList.remove('active');
     closeUploadModal();
