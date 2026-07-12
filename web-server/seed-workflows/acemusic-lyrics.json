@@ -1,0 +1,54 @@
+{
+  "1": {
+    "class_type": "AceMusicModelLoader",
+    "inputs": {
+      "device": "cuda",
+      "cpu_offload": true,
+      "torch_compile": false,
+      "overlapped_decode": false
+    }
+  },
+  "2": {
+    "class_type": "AceMusicSettings",
+    "inputs": {
+      "duration": 30,
+      "vocal_language": "ja",
+      "bpm": 120,
+      "timesignature": "4/4",
+      "keyscale": "",
+      "instrumental": false,
+      "inference_steps": 27,
+      "guidance_scale": 15,
+      "seed": -1
+    }
+  },
+  "3": {
+    "class_type": "AceMusicLyricsInput",
+    "inputs": {
+      "lyrics": "[Verse]\nKimi no koe ga kikoeru\nTooi sora no mukou kara\n\n[Chorus]\nHikari no naka de\nFutari aruite yukou\nKono michi wo\n\n[Outro]\n(Instrumental)"
+    }
+  },
+  "4": {
+    "class_type": "AceMusicCaptionInput",
+    "inputs": {
+      "caption": "J-pop, female vocal, bright synthesizer, catchy melody, energetic, uplifting mood"
+    }
+  },
+  "5": {
+    "class_type": "AceMusicGenerator",
+    "inputs": {
+      "model": ["1", 0],
+      "caption": ["4", 0],
+      "lyrics": ["3", 0],
+      "settings": ["2", 0]
+    }
+  },
+  "6": {
+    "class_type": "SaveAudioMP3",
+    "inputs": {
+      "audio": ["5", 0],
+      "filename_prefix": "audio/ace_step_song",
+      "quality": "V0"
+    }
+  }
+}

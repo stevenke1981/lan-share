@@ -18,6 +18,7 @@
         </div>
         <button class="btn btn-primary" id="uploadBtn">⬆ Upload</button>
         <button class="btn btn-secondary" id="newFolderBtn">📂 New Folder</button>
+        <button class="btn btn-secondary" id="comfyBtn">🎨 ComfyUI</button>
       </div>
     </div>
   </header>
@@ -181,6 +182,43 @@
       <div class="modal-footer">
         <button class="btn btn-secondary" id="cancelTextInput">Cancel</button>
         <button class="btn btn-primary" id="confirmTextInput">Add Text</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ComfyUI panel -->
+  <div class="modal-overlay" id="comfyModal">
+    <div class="modal modal-comfy">
+      <div class="modal-header">
+        <h2>🎨 ComfyUI</h2>
+        <div class="preview-actions">
+          <span class="comfy-status" id="comfyStatus">Checking…</span>
+          <button class="close-btn" id="closeComfy">&times;</button>
+        </div>
+      </div>
+      <div class="modal-body comfy-body">
+        <div class="comfy-sidebar">
+          <div class="comfy-sidebar-head">
+            <span>Workflows</span>
+            <button class="btn btn-sm btn-secondary" id="comfyRefresh" title="Refresh">↻</button>
+          </div>
+          <ul class="comfy-wf-list" id="comfyWfList">
+            <li class="comfy-wf-empty">Loading…</li>
+          </ul>
+        </div>
+        <div class="comfy-main">
+          <div class="comfy-form-head" id="comfyFormHead">
+            <h3 id="comfyWfTitle">Select a workflow</h3>
+            <p id="comfyWfDesc" class="comfy-wf-desc"></p>
+          </div>
+          <form class="comfy-form" id="comfyForm"></form>
+          <div class="comfy-actions" id="comfyActions" style="display:none">
+            <button class="btn btn-primary" id="comfyGenerate">▶ Generate</button>
+            <button class="btn btn-secondary" id="comfyDelete">🗑 Delete workflow</button>
+            <span class="comfy-run-status" id="comfyRunStatus"></span>
+          </div>
+          <div class="comfy-results" id="comfyResults"></div>
+        </div>
       </div>
     </div>
   </div>

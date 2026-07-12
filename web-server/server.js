@@ -35,6 +35,7 @@ const {
 // Read version from package.json (single source of truth)
 const pkg = require('./package.json');
 const VERSION = pkg.version || '1.3.0';
+const comfyui = require('./comfyui');
 
 // ─── Configuration ────────────────────────────────────
 const SHARE_DIR = path.resolve(process.argv.includes('--dir')
@@ -56,6 +57,21 @@ if (!fs.existsSync(SHARE_DIR)) {
   console.error(`Share directory does not exist: ${SHARE_DIR}`);
   process.exit(1);
 }
+
+function seedComfyWorkflows() {
+  const srcDir = path.join(__dirname, 'seed-workflows');
+  if (!fs.existsSync(srcDir)) return;
+  const destDir = comfyui.workflowDir(SHARE_DIR);
+  fs.mkdirSync(destDir, { recursive: true });
+  for (const file of fs.readdirSync(srcDir)) {
+    if (!file.endsWith('.json')) continue;
+    const src = path.join(srcDir, file);
+    const dest = path.join(destDir, file);
+    if (!fs.existsSync(dest)) fs.copyFileSync(src, dest);
+  }
+}
+
+seedComfyWorkflows();
 
 const app = express();
 app.use(express.json({ limit: '10mb' })); // reduced from 50mb — uploads go through multer

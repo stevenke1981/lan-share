@@ -11,6 +11,8 @@ let isEditMode = false;
 let currentFilePath = '';
 let currentPreviewType = '';
 let isImageEditorOpen = false;
+let comfyWorkflows = [];
+let currentComfyWorkflow = null;
 
 // ─── DOM refs ─────────────────────────────────────────
 const fileList = document.getElementById('fileList');
@@ -20,6 +22,7 @@ const emptyState = document.getElementById('emptyState');
 const searchInput = document.getElementById('searchInput');
 const uploadBtn = document.getElementById('uploadBtn');
 const newFolderBtn = document.getElementById('newFolderBtn');
+const comfyBtn = document.getElementById('comfyBtn');
 const uploadOverlay = document.getElementById('uploadOverlay');
 const closeUpload = document.getElementById('closeUpload');
 const dropzone = document.getElementById('dropzone');
@@ -63,6 +66,20 @@ const renameInput = document.getElementById('renameInput');
 const closeRenameModal = document.getElementById('closeRenameModal');
 const cancelRename = document.getElementById('cancelRename');
 const confirmRename = document.getElementById('confirmRename');
+
+const comfyModal = document.getElementById('comfyModal');
+const closeComfy = document.getElementById('closeComfy');
+const comfyStatus = document.getElementById('comfyStatus');
+const comfyRefresh = document.getElementById('comfyRefresh');
+const comfyWfList = document.getElementById('comfyWfList');
+const comfyWfTitle = document.getElementById('comfyWfTitle');
+const comfyWfDesc = document.getElementById('comfyWfDesc');
+const comfyForm = document.getElementById('comfyForm');
+const comfyActions = document.getElementById('comfyActions');
+const comfyGenerate = document.getElementById('comfyGenerate');
+const comfyDelete = document.getElementById('comfyDelete');
+const comfyRunStatus = document.getElementById('comfyRunStatus');
+const comfyResults = document.getElementById('comfyResults');
 
 // ─── Image Editor DOM refs ────────────────────────────
 const imgEditorToolbar = document.getElementById('imgEditorToolbar');
@@ -1150,6 +1167,7 @@ document.addEventListener('keydown', (e) => {
     if (isImageEditorOpen) { closeImageEditor(); return; }
     if (isEditMode) { exitEditMode(); return; }
     renameModal.classList.remove('active');
+    if (comfyModal.classList.contains('active')) { comfyModal.classList.remove('active'); return; }
     previewModal.classList.remove('active');
     folderModal.classList.remove('active');
     closeUploadModal();
@@ -1194,6 +1212,220 @@ window.addEventListener('resize', () => {
     renderCanvas();
   }
 });
+
+// ─── ComfyUI ──────────────────────────────────────────
+comfyBtn.addEventListener('click', openComfy);
+closeComfy.addEventListener('click', () => comfyModal.classList.remove('active'));
+comfyModal.addEventListener('click', (e) => { if (e.target === comfyModal) comfyModal.classList.remove('active'); });
+comfyRefresh.addEventListener('click', () => { loadComfyStatus(); loadComfyWorkflows(); });
+comfyGenerate.addEventListener('click', runComfyGenerate);
+comfyDelete.addEventListener('click', deleteComfyWorkflow);
+
+async function openComfy() {
+  comfyModal.classList.add('active');
+  loadComfyStatus();
+  loadComfyWorkflows();
+}
+
+async function loadComfyStatus() {
+  comfyStatus.textContent = 'Checking…';
+  comfyStatus.className = 'comfy-status';
+  try {
+    const res = await fetch('/api/comfy/status');
+    const s = await res.json();
+    if (s.online) {
+      comfyStatus.textContent = `● Online — v${s.version || '?'}`;
+      comfyStatus.classList.add('online');
+    } else {
+      comfyStatus.textContent = `● Offline (${s.error || 'no connection'})`;
+      comfyStatus.classList.add('offline');
+    }
+  } catch (err) {
+    comfyStatus.textContent = '● Offline';
+    comfyStatus.classList.add('offline');
+  }
+}
+
+async function loadComfyWorkflows() {
+  comfyWfList.innerHTML = '<li class="comfy-wf-empty">Loading…</li>';
+  try {
+    const res = await fetch('/api/comfy/workflows');
+    const data = await res.json();
+    comfyWorkflows = data.workflows || [];
+    if (comfyWorkflows.length === 0) {
+      comfyWfList.innerHTML = '<li class="comfy-wf-empty">No workflows</li>';
+      return;
+    }
+    comfyWfList.innerHTML = comfyWorkflows.map(wf =>
+      `<li class="comfy-wf-item" data-name="${escHtml(wf.name)}">${escHtml(wf.title)}</li>`
+    ).join('');
+    comfyWfList.querySelectorAll('.comfy-wf-item').forEach(li => {
+      li.addEventListener('click', () => selectComfyWorkflow(li.dataset.name));
+    });
+  } catch (err) {
+    comfyWfList.innerHTML = `<li class="comfy-wf-empty">Error: ${escHtml(err.message)}</li>`;
+  }
+}
+
+async function selectComfyWorkflow(name) {
+  const wf = comfyWorkflows.find(w => w.name === name);
+  if (!wf) return;
+  currentComfyWorkflow = wf;
+
+  comfyWfList.querySelectorAll('.comfy-wf-item').forEach(li => {
+    li.classList.toggle('active', li.dataset.name === name);
+  });
+
+  comfyWfTitle.textContent = wf.title;
+  comfyWfDesc.textContent = wf.description || '';
+  comfyResults.innerHTML = '';
+  comfyRunStatus.textContent = '';
+
+  const fields = wf.fields || [];
+  if (fields.length === 0) {
+    comfyForm.innerHTML = '<p class="comfy-wf-desc">No editable fields defined for this workflow. It will run with saved defaults.</p>';
+  } else {
+    comfyForm.innerHTML = fields.map(renderComfyField).join('');
+    await populateComfyDefaults(name, fields);
+  }
+  comfyActions.style.display = 'flex';
+}
+
+// Fill form controls with the workflow's saved input values.
+async function populateComfyDefaults(name, fields) {
+  try {
+    const res = await fetch(`/api/comfy/workflow?name=${encodeURIComponent(name)}`);
+    if (!res.ok) return;
+    const data = await res.json();
+    const prompt = data.prompt || {};
+    for (const f of fields) {
+      const node = prompt[String(f.node)];
+      if (!node || !node.inputs) continue;
+      const val = node.inputs[f.input];
+      if (val === undefined || Array.isArray(val)) continue;
+      const el = document.getElementById(`cf_${f.name}`);
+      if (!el) continue;
+      if (el.type === 'checkbox') el.checked = !!val;
+      else el.value = val;
+    }
+  } catch { /* defaults are best-effort */ }
+}
+
+function renderComfyField(f) {
+  const id = `cf_${f.name}`;
+  const label = `<label class="comfy-label" for="${id}">${escHtml(f.label || f.name)}</label>`;
+  let control = '';
+  if (f.type === 'textarea') {
+    control = `<textarea id="${id}" class="comfy-input" rows="${f.rows || 4}" data-node="${f.node}" data-input="${f.input}"></textarea>`;
+  } else if (f.type === 'select') {
+    const opts = (f.options || []).map(o => `<option value="${escHtml(String(o))}">${escHtml(String(o) || '(none)')}</option>`).join('');
+    control = `<select id="${id}" class="comfy-input" data-node="${f.node}" data-input="${f.input}">${opts}</select>`;
+  } else if (f.type === 'checkbox') {
+    control = `<input type="checkbox" id="${id}" class="comfy-checkbox" data-node="${f.node}" data-input="${f.input}" />`;
+  } else if (f.type === 'number') {
+    const attrs = [
+      f.min !== undefined ? `min="${f.min}"` : '',
+      f.max !== undefined ? `max="${f.max}"` : '',
+      f.step !== undefined ? `step="${f.step}"` : '',
+    ].join(' ');
+    control = `<input type="number" id="${id}" class="comfy-input" ${attrs} data-node="${f.node}" data-input="${f.input}" data-numeric="1" />`;
+  } else {
+    control = `<input type="text" id="${id}" class="comfy-input" data-node="${f.node}" data-input="${f.input}" />`;
+  }
+  return `<div class="comfy-field">${label}${control}</div>`;
+}
+
+function collectComfyOverrides() {
+  const overrides = [];
+  comfyForm.querySelectorAll('[data-node]').forEach(el => {
+    const node = el.dataset.node;
+    const input = el.dataset.input;
+    let value;
+    if (el.type === 'checkbox') {
+      value = el.checked;
+    } else if (el.dataset.numeric) {
+      if (el.value === '') return;
+      value = Number(el.value);
+    } else {
+      value = el.value;
+    }
+    overrides.push({ node, input, value });
+  });
+  return overrides;
+}
+
+async function runComfyGenerate() {
+  if (!currentComfyWorkflow) return;
+  const overrides = collectComfyOverrides();
+
+  comfyGenerate.disabled = true;
+  comfyRunStatus.textContent = '⏳ Generating… (this can take a while)';
+  comfyRunStatus.className = 'comfy-run-status';
+  comfyResults.innerHTML = '';
+
+  try {
+    const res = await fetch('/api/comfy/generate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ workflow: currentComfyWorkflow.name, overrides }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Generation failed');
+
+    comfyRunStatus.textContent = `✅ Done (${data.result?.files?.length || 0} file(s))`;
+    renderComfyResults(data.result?.files || []);
+  } catch (err) {
+    comfyRunStatus.textContent = `❌ ${err.message}`;
+    comfyRunStatus.classList.add('error');
+  } finally {
+    comfyGenerate.disabled = false;
+  }
+}
+
+function renderComfyResults(files) {
+  if (files.length === 0) {
+    comfyResults.innerHTML = '<p class="comfy-wf-desc">No output files.</p>';
+    return;
+  }
+  comfyResults.innerHTML = files.map(f => {
+    const url = `/files/${f.path.split('/').map(encodeURIComponent).join('/')}`;
+    let media = '';
+    if (f.kind === 'audio') {
+      media = `<audio controls src="${url}"></audio>`;
+    } else if (f.kind === 'images') {
+      media = `<img src="${url}" alt="${escHtml(f.filename)}" />`;
+    } else {
+      media = `<video controls src="${url}"></video>`;
+    }
+    return `<div class="comfy-result">
+      <div class="comfy-result-name">${escHtml(f.filename)}</div>
+      ${media}
+      <a class="btn btn-sm btn-secondary" href="${url}" download>⬇ Download</a>
+    </div>`;
+  }).join('');
+}
+
+async function deleteComfyWorkflow() {
+  if (!currentComfyWorkflow) return;
+  if (!confirm(`Delete workflow "${currentComfyWorkflow.title}"?`)) return;
+  try {
+    const res = await fetch('/api/comfy/workflow', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: currentComfyWorkflow.name }),
+    });
+    if (!res.ok) throw new Error((await res.json()).error);
+    showToast(`Deleted workflow: ${currentComfyWorkflow.title}`);
+    currentComfyWorkflow = null;
+    comfyForm.innerHTML = '';
+    comfyActions.style.display = 'none';
+    comfyWfTitle.textContent = 'Select a workflow';
+    comfyWfDesc.textContent = '';
+    loadComfyWorkflows();
+  } catch (err) {
+    showToast(`Error: ${err.message}`, 'error');
+  }
+}
 
 // ─── Init ─────────────────────────────────────────────
 initApp();

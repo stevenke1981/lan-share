@@ -1,0 +1,117 @@
+{
+  "title": "AceMusic Lyrics",
+  "description": "Generate a song from lyrics and style prompt using the AceMusic custom node.",
+  "fields": [
+    {
+      "name": "device",
+      "label": "Device",
+      "type": "select",
+      "node": "1",
+      "input": "device",
+      "options": ["cuda", "cuda:0", "cuda:1", "cpu"]
+    },
+    {
+      "name": "cpu_offload",
+      "label": "CPU offload (safer for low VRAM)",
+      "type": "checkbox",
+      "node": "1",
+      "input": "cpu_offload"
+    },
+    {
+      "name": "lyrics",
+      "label": "Lyrics",
+      "type": "textarea",
+      "node": "3",
+      "input": "lyrics",
+      "required": true,
+      "rows": 9
+    },
+    {
+      "name": "caption",
+      "label": "Music style / caption",
+      "type": "textarea",
+      "node": "4",
+      "input": "caption",
+      "required": true,
+      "rows": 3
+    },
+    {
+      "name": "duration",
+      "label": "Duration (seconds)",
+      "type": "number",
+      "node": "2",
+      "input": "duration",
+      "min": 5,
+      "max": 240,
+      "step": 1
+    },
+    {
+      "name": "vocal_language",
+      "label": "Vocal language",
+      "type": "select",
+      "node": "2",
+      "input": "vocal_language",
+      "options": ["unknown", "en", "zh", "ja", "ko", "es", "fr", "de", "it", "pt", "ru"]
+    },
+    {
+      "name": "bpm",
+      "label": "BPM",
+      "type": "number",
+      "node": "2",
+      "input": "bpm",
+      "min": 40,
+      "max": 240,
+      "step": 1
+    },
+    {
+      "name": "timesignature",
+      "label": "Time signature",
+      "type": "select",
+      "node": "2",
+      "input": "timesignature",
+      "options": ["", "4/4", "3/4", "2/4", "6/8", "5/4", "7/8", "12/8"]
+    },
+    {
+      "name": "instrumental",
+      "label": "Instrumental",
+      "type": "checkbox",
+      "node": "2",
+      "input": "instrumental"
+    },
+    {
+      "name": "inference_steps",
+      "label": "Inference steps",
+      "type": "number",
+      "node": "2",
+      "input": "inference_steps",
+      "min": 1,
+      "max": 100,
+      "step": 1
+    },
+    {
+      "name": "guidance_scale",
+      "label": "Guidance scale",
+      "type": "number",
+      "node": "2",
+      "input": "guidance_scale",
+      "min": 0,
+      "max": 30,
+      "step": 0.5
+    },
+    {
+      "name": "seed",
+      "label": "Seed (-1 = random)",
+      "type": "number",
+      "node": "2",
+      "input": "seed",
+      "step": 1
+    },
+    {
+      "name": "filename_prefix",
+      "label": "Output filename prefix",
+      "type": "text",
+      "node": "6",
+      "input": "filename_prefix"
+    }
+  ]
+}
